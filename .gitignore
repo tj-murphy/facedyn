@@ -33,9 +33,15 @@ env/
 Data/
 python_smoothed.csv
 r_smoothed.csv
+r_normalised.csv
+r_normalised_old.csv
+r_NMF.csv
 
 # Notes (more for me than anything)
 PIPELINE.md
 PROJECT_STRUCTURE.md
 DATA_FORMAT.md
+
+# Session summaries
+session-summaries/
 
