@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "facedyn"
+version = "0.1.0"
+description = "Interpretable facial-dynamics pipeline for deepfake detection (Python port of the Paper 1 R analysis)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Timothy Murphy" }]
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+    "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/facedyn"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
