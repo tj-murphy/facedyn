@@ -33,3 +33,9 @@ env/
 Data/
 python_smoothed.csv
 r_smoothed.csv
+
+# Notes (more for me than anything)
+PIPELINE.md
+PROJECT_STRUCTURE.md
+DATA_FORMAT.md
+
