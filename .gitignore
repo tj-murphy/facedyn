@@ -30,8 +30,6 @@ env/
 
 # Large / superseded data — see PIPELINE.md validation protocol:
 # small fixtures in tests/validation/fixtures/ replace these for testing.
-# Data/ likely derives from the restricted Google DFD / FaceForensics++
-# dataset and should not be redistributed via the repo regardless of size.
 Data/
 python_smoothed.csv
 r_smoothed.csv

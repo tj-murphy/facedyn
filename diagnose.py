@@ -37,7 +37,7 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as ticker
 
-# ── CONFIG ────────────────────────────────────────────────────────────────────
+# CONFIG
 DATA_PATH = "Data/full_dataset_preprocessed.csv"
 VIDEO     = "20__exit_phone_room"
 AU_COL    = "AU07_r"
@@ -48,15 +48,14 @@ ALN_BASE  = "left"     # alignment shown in the patchwork panels and window row
 OUT_PATH  = "smoothing_diagnostic.png"
 DPI       = 150
 
-# Colours — matched to the R script palette
+# Colours
 RAW_COLOR    = "#009E73"
 SMTH_COLOR   = "#E69F00"
 ALIGN_COLORS = {"left": "#0072B2", "center": "#CC79A7", "right": "#D55E00"}
 WINDOW_CMAP  = plt.cm.plasma
-# ─────────────────────────────────────────────────────────────────────────────
 
 
-# ── Smoothing ─────────────────────────────────────────────────────────────────
+# Smoothing
 def smooth(series: pd.Series, window: int, align: str) -> pd.Series:
     """
     Rolling mean replicating zoo::rollmean(fill='extend').
@@ -72,7 +71,7 @@ def smooth(series: pd.Series, window: int, align: str) -> pd.Series:
     return rolled.ffill().bfill()
 
 
-# ── Metrics ───────────────────────────────────────────────────────────────────
+# Metrics
 def evaluate(original: pd.Series, smoothed: pd.Series) -> tuple[float, float]:
     """
     Returns (fidelity, roughness_reduction).
@@ -92,7 +91,7 @@ def evaluate(original: pd.Series, smoothed: pd.Series) -> tuple[float, float]:
     return fidelity, roughness_reduction
 
 
-# ── Load & pre-compute ────────────────────────────────────────────────────────
+# Load & pre-compute 
 df  = pd.read_csv(DATA_PATH)
 vid = df[df["video_filename"] == VIDEO].reset_index(drop=True)
 raw = vid[AU_COL]
@@ -111,7 +110,7 @@ for w in WINDOWS:
 metrics_df = pd.DataFrame(metrics_records)
 
 
-# ── Shared style ──────────────────────────────────────────────────────────────
+# Shared style
 plt.rcParams.update({
     "font.family":       "serif",
     "font.size":         11,
@@ -134,7 +133,7 @@ def style_ax(ax, title, xlabel="Frame", ylabel="AU Intensity", hide_xlabel=False
         plt.setp(ax.get_xticklabels(), visible=False)
 
 
-# ── Figure ────────────────────────────────────────────────────────────────────
+# Figure
 fig = plt.figure(figsize=(16, 22), facecolor="white")
 gs  = gridspec.GridSpec(
     5, 3, figure=fig,
@@ -143,7 +142,7 @@ gs  = gridspec.GridSpec(
     wspace=0.33,
 )
 
-# ── Rows 0–1 left: Raw / Smoothed stacked ─────────────────────────────────────
+# Rows 0–1 left: Raw / Smoothed stacked
 ax_raw = fig.add_subplot(gs[0, :2])
 ax_raw.plot(frames, raw, color=RAW_COLOR, alpha=0.6, linewidth=0.8)
 style_ax(ax_raw, "AU07 (Raw)", hide_xlabel=True)
@@ -152,14 +151,14 @@ ax_smth = fig.add_subplot(gs[1, :2], sharex=ax_raw)
 ax_smth.plot(frames, current, color=SMTH_COLOR, linewidth=0.9)
 style_ax(ax_smth, f"AU07 (Smoothed)  —  k={K_BASE}, align='{ALN_BASE}'")
 
-# ── Rows 0–1 right: Overlay ────────────────────────────────────────────────────
+# Rows 0–1 right: Overlay
 ax_ov = fig.add_subplot(gs[0:2, 2])
 ax_ov.plot(frames, raw,     color=RAW_COLOR,  alpha=0.45, linewidth=0.75, label="Raw")
 ax_ov.plot(frames, current, color=SMTH_COLOR, linewidth=0.95,             label="Smoothed")
 ax_ov.legend(fontsize=10, frameon=False, loc="upper right")
 style_ax(ax_ov, "Overlay")
 
-# ── Row 2: Alignment comparison at K_BASE ─────────────────────────────────────
+# Row 2: Alignment comparison at K_BASE
 for i, align in enumerate(ALIGNS):
     ax = fig.add_subplot(gs[2, i])
     sm = smoothed_versions[(K_BASE, align)]
@@ -179,7 +178,7 @@ for i, align in enumerate(ALIGNS):
     for sp in ["top", "right"]:
         ax.spines[sp].set_visible(False)
 
-# ── Row 3 left: Window-size comparison at ALN_BASE ────────────────────────────
+# Row 3 left: Window size comparison at ALN_BASE
 ax_win = fig.add_subplot(gs[3, :2])
 ax_win.plot(frames, raw, color=RAW_COLOR, alpha=0.22, linewidth=0.7, label="Raw")
 for k_idx, w in enumerate(WINDOWS):
@@ -193,7 +192,7 @@ for k_idx, w in enumerate(WINDOWS):
 ax_win.legend(fontsize=8.5, frameon=False, ncol=3, loc="upper right")
 style_ax(ax_win, f"Window-size comparison  —  align='{ALN_BASE}'")
 
-# ── Row 3 right: Jitter-removed heatmap  (higher = greener = better) ──────────
+# Row 3 right: Jitter-removed heatmap  (higher = greener = better)
 ax_hm = fig.add_subplot(gs[3, 2])
 heat  = metrics_df.pivot(index="window", columns="align",
                           values="roughness_reduction")[ALIGNS]
@@ -218,7 +217,7 @@ for i, w in enumerate(WINDOWS):
                    ha="center", va="center", fontsize=8,
                    color=txt_col, fontweight="bold")
 
-# ── Row 4: Scatter — fidelity vs roughness reduction ──────────────────────────
+# Row 4: Scatter (fidelity vs roughness reduction)
 ax_sc = fig.add_subplot(gs[4, :])
 
 for a in ALIGNS:
@@ -243,7 +242,6 @@ ax_sc.scatter(
     zorder=4, label=f"current  (k={K_BASE}, align='{ALN_BASE}')",
 )
 
-# "Better" diagonal arrow
 x_min = metrics_df["fidelity"].min()
 x_max = metrics_df["fidelity"].max()
 y_min = metrics_df["roughness_reduction"].min()
@@ -281,7 +279,7 @@ ax_sc.legend(fontsize=9, frameon=False, loc="lower right")
 for sp in ["top", "right"]:
     ax_sc.spines[sp].set_visible(False)
 
-# ── Super-title ────────────────────────────────────────────────────────────────
+# Super title
 fig.suptitle(
     f"Smoothing Diagnostic  —  {AU_COL}  |  {VIDEO}",
     fontsize=15, fontweight="bold", color="black", y=0.999,

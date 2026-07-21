@@ -1,17 +1,16 @@
 # facedyn
 
-Python implementation of the interpretable facial-dynamics deepfake
-detection pipeline from Murphy, Cook & Cuve, "Interpretable facial dynamics
-as behavioral and perceptual traces of deepfakes." Ports the original R
-analysis into a reusable, tested package built on scikit-learn-style
-transformers.
+A Python toolkit for interpretable analysis of facial Action Unit (AU) time
+series: temporal smoothing, dimensionality reduction (NMF), interpretable
+time-series feature extraction (CMFTS), and classification — usable for any
+condition comparison (real/fake, emotion, patient/control, ...), not just
+the deepfake-detection use case it was built to reproduce.
 
-Project is under active development. See:
+Originally a port of the R analysis featured in Murphy, Cook & Cuve,
+"Interpretable facial dynamics as behavioral and perceptual traces of
+deepfakes" (in prep).
 
-- [`PIPELINE.md`](PIPELINE.md) — the pipeline steps being implemented and
-  their porting status
-- [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) — package layout and
-  design rationale
+Project is under active development.
 
 ## Development install
 
