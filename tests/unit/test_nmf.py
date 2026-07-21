@@ -1,8 +1,10 @@
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.decomposition import NMF as SklearnNMF
 
-from facedyn.nmf import NMFDecomposer, nmf_rank_mse_sweep
+import facedyn.nmf as facedyn_nmf
+from facedyn.nmf import NMFDecomposer, _masked_nmf, nmf_rank_cv_sweep, nmf_rank_mse_sweep
 
 # The paper's actual max_iter/tol settings (kept as this module's defaults
 # for fidelity) don't always fully converge on tiny synthetic test
@@ -10,13 +12,15 @@ from facedyn.nmf import NMFDecomposer, nmf_rank_mse_sweep
 pytestmark = pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceWarning")
 
 
-def make_low_rank_df(n_samples: int = 200, n_features: int = 8, rank: int = 3, seed: int = 0) -> pd.DataFrame:
+def make_low_rank_df(
+    n_samples: int = 200, n_features: int = 8, rank: int = 3, noise: float = 0.01, seed: int = 0
+) -> pd.DataFrame:
     """Synthetic non-negative data with a known low-rank structure plus noise."""
     rng = np.random.default_rng(seed)
     W_true = rng.uniform(0, 1, size=(n_samples, rank))
     H_true = rng.uniform(0, 1, size=(rank, n_features))
-    noise = rng.normal(0, 0.01, size=(n_samples, n_features))
-    data = np.clip(W_true @ H_true + noise, 0, None)
+    noise_matrix = rng.normal(0, noise, size=(n_samples, n_features))
+    data = np.clip(W_true @ H_true + noise_matrix, 0, None)
 
     df = pd.DataFrame(data, columns=[f"smth_AU{i:02d}_r" for i in range(n_features)])
     df.insert(0, "video_filename", [f"vid_{i % 10}" for i in range(n_samples)])
@@ -85,3 +89,115 @@ def test_explicit_columns_override_pattern():
     })
     decomposer = NMFDecomposer(n_components=1, columns=["a", "b"], random_state=0).fit(df)
     assert decomposer.columns_ == ["a", "b"]
+
+
+def test_masked_nmf_fully_observed_is_comparable_to_sklearn():
+    df = make_low_rank_df()
+    data = df.filter(like="smth_").to_numpy()
+    mask = np.ones_like(data)
+
+    W, H = _masked_nmf(data, mask, n_components=3, random_state=0)
+    masked_mse = ((data - W @ H) ** 2).mean()
+
+    sklearn_model = SklearnNMF(n_components=3, init="nndsvda", random_state=0, max_iter=750, tol=1e-6)
+    W_sk = sklearn_model.fit_transform(data)
+    sklearn_mse = ((data - W_sk @ sklearn_model.components_) ** 2).mean()
+
+    # Different algorithm/init -- not bit-for-bit, just comparably good.
+    assert masked_mse == pytest.approx(sklearn_mse, abs=0.05)
+
+
+def test_masked_nmf_output_is_non_negative_and_fits_observed_entries_well():
+    df = make_low_rank_df(noise=0.01)
+    data = df.filter(like="smth_").to_numpy()
+    rng = np.random.default_rng(0)
+    mask = (rng.random(data.shape) >= 0.1).astype(float)
+
+    W, H = _masked_nmf(data, mask, n_components=3, random_state=0)
+
+    assert (W >= 0).all()
+    assert (H >= 0).all()
+    train_mse = ((mask * (data - W @ H)) ** 2).sum() / mask.sum()
+    assert train_mse < 0.05  # low-noise low-rank data should fit tightly
+
+
+def test_masked_nmf_same_random_state_is_deterministic():
+    df = make_low_rank_df()
+    data = df.filter(like="smth_").to_numpy()
+    mask = np.ones_like(data)
+
+    W_a, H_a = _masked_nmf(data, mask, n_components=3, random_state=5)
+    W_b, H_b = _masked_nmf(data, mask, n_components=3, random_state=5)
+
+    np.testing.assert_array_equal(W_a, W_b)
+    np.testing.assert_array_equal(H_a, H_b)
+
+
+def test_cv_sweep_returns_one_row_per_rank_and_replicate():
+    df = make_low_rank_df()
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 5), n_replicates=4, random_state=0)
+
+    assert len(result) == 3 * 4  # 3 ranks x 4 replicates
+    assert set(result.columns) == {"rank", "rep", "train_mse", "test_mse"}
+    assert result["test_mse"].dropna().ge(0).all()
+
+
+def test_cv_sweep_reveals_overfitting_past_the_true_rank():
+    # Small sample count and larger noise, relative to nmf_rank_mse_sweep's
+    # tests, so overfitting is actually inducible within a compact rank
+    # range -- this is the exact property that failed silently with the
+    # discarded row-holdout mechanism, so it must be a real, non-trivial
+    # check (a too-easy case would pass regardless of whether the CV
+    # mechanism works).
+    df = make_low_rank_df(n_samples=60, n_features=10, rank=3, noise=0.15, seed=1)
+    result = nmf_rank_cv_sweep(
+        df, ranks=range(2, 9), test_fraction=0.2, n_replicates=4, random_state=1
+    )
+    agg = result.groupby("rank")[["train_mse", "test_mse"]].mean()
+
+    best_rank = agg["test_mse"].idxmin()
+    assert best_rank <= 5  # near the true rank=3, allowing some slack
+
+    # Training error keeps improving well past where test error is best.
+    assert agg["train_mse"].iloc[-1] < agg["train_mse"].loc[best_rank]
+
+
+def test_cv_sweep_same_random_state_is_deterministic():
+    df = make_low_rank_df()
+    result_a = nmf_rank_cv_sweep(df, ranks=range(2, 4), n_replicates=3, random_state=7)
+    result_b = nmf_rank_cv_sweep(df, ranks=range(2, 4), n_replicates=3, random_state=7)
+
+    pd.testing.assert_frame_equal(result_a, result_b)
+
+
+def test_cv_sweep_records_nan_instead_of_raising(monkeypatch):
+    real_masked_nmf = facedyn_nmf._masked_nmf
+
+    def flaky_masked_nmf(X, mask, n_components, **kwargs):
+        if n_components == 3:
+            raise RuntimeError("simulated NMF failure")
+        return real_masked_nmf(X, mask, n_components, **kwargs)
+
+    monkeypatch.setattr(facedyn_nmf, "_masked_nmf", flaky_masked_nmf)
+
+    df = make_low_rank_df()
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 5), n_replicates=2, random_state=0)
+
+    failed_rows = result[result["rank"] == 3]
+    ok_rows = result[result["rank"] != 3]
+    assert failed_rows["train_mse"].isna().all()
+    assert failed_rows["test_mse"].isna().all()
+    assert ok_rows["train_mse"].notna().all()
+
+
+def test_plot_nmf_rank_cv_runs_and_returns_axes():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_rank_cv
+
+    df = make_low_rank_df()
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 5), n_replicates=3, random_state=0)
+
+    ax = plot_nmf_rank_cv(result)
+    assert ax is not None
+    assert len(ax.lines) > 0

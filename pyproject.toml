@@ -21,6 +21,9 @@ dependencies = [
 dev = [
     "pytest>=7.4",
 ]
+viz = [
+    "matplotlib>=3.7",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/facedyn"]

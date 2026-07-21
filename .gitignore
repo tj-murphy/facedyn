@@ -15,6 +15,7 @@ dist/
 .ruff_cache/
 .coverage
 htmlcov/
+.claude/
 
 # Virtual environments
 .venv/
@@ -36,6 +37,7 @@ r_smoothed.csv
 r_normalised.csv
 r_normalised_old.csv
 r_NMF.csv
+r_optimal_k_input.csv
 
 # Notes (more for me than anything)
 PIPELINE.md
@@ -44,4 +46,8 @@ DATA_FORMAT.md
 
 # Session summaries
 session-summaries/
+
+# R code - this is mainly for testing the new version of RccpML
+# which released a new version with rank selection stuff after I last used it.
+r_rank_selection/
 
