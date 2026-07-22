@@ -377,10 +377,31 @@ class NMFDecomposer(BaseEstimator, TransformerMixin):
     columns. Mirrors R's ``dta_nmf_output`` shape: R's factorisation
     ``A ≈ W · diag(d) · H`` separates shape (unit-normalized W, H) from
     scale (d) for interpretability, which sklearn's NMF doesn't do — its
-    solver absorbs scale directly into W/H. That actually simplifies
-    things here: sklearn's ``fit_transform`` output already *is* the
-    equivalent of R's scaled, transposed H (real activation magnitudes,
-    not unit-normalized), so no separate rescaling step is needed.
+    solver absorbs scale directly into W/H instead.
+
+    **Validated against real R output** (see
+    ``tests/validation/test_nmf_decomposer_validation.py``, comparing
+    against ``r_NMF.csv`` / R's real ``dta_nmf_output``): after matching
+    components between the two fits (unconstrained NMF only identifies
+    components up to a permutation and an arbitrary positive rescaling of
+    each component, since ``(W, H)`` and ``(W·S, S⁻¹·H)`` reconstruct the
+    same data for any positive diagonal ``S`` — components are matched via
+    Hungarian assignment on cross-correlation, the standard technique for
+    this ambiguity), each matched pair correlates at >0.999 and is related
+    by a clean per-component proportional scale (least-squares slope
+    through the origin, <1% relative residual) — strong evidence sklearn
+    finds essentially the same 3 components RcppML did. This *contradicts*
+    an earlier, untested assumption recorded here that sklearn's
+    ``fit_transform`` output would already numerically equal R's
+    ``diag(d)``-scaled H with no rescaling needed: empirically, each
+    component ends up on its own arbitrary scale (R's real output values
+    are ~60-130x larger than sklearn's per component, and that ratio
+    differs by component) — proportional per component, not identical.
+    Not corrected here since nothing downstream yet depends on matching
+    R's absolute scale (representative-AU selection, the next pipeline
+    step, only needs each component's *argmax* AU, which is scale-invariant
+    per column) — but worth knowing before relying on these activation
+    values' absolute magnitude for anything new.
 
     Parameters
     ----------
@@ -450,3 +471,90 @@ class NMFDecomposer(BaseEstimator, TransformerMixin):
             columns=[f"{self.prefix}{i + 1}" for i in range(self.n_components)],
         )
         return pd.concat([metadata, activation_cols], axis=1)
+
+
+def plot_nmf_basis_heatmap(
+    decomposer: NMFDecomposer,
+    normalize: bool = True,
+    labels: list[str] | None = None,
+    ax=None,
+    cmap: str = "Blues",
+):
+    """Plot a fitted :class:`NMFDecomposer`'s basis matrix as a heatmap.
+
+    Replicates the original R analysis's basis-matrix figure
+    (``NMF::aheatmap`` on ``model_nmf$w`` in ``final_analysis.Rmd``):
+    features (rows) against components (columns), no clustering/reordering
+    of either axis, sequential color scale.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    Parameters
+    ----------
+    decomposer : NMFDecomposer
+        A fitted decomposer (i.e. ``fit`` or ``fit_transform`` already
+        called).
+    normalize : bool, default True
+        If True (matching the R analysis's *published* figure, built from
+        ``apply(model_nmf$w, 2, fn_maxnormalise)``), each component's
+        column is independently min-max scaled to ``[0, 1]`` before
+        plotting. This isn't just cosmetic: unconstrained NMF only
+        identifies components up to an arbitrary positive per-component
+        scale (see :class:`NMFDecomposer`'s docstring), so the *raw* basis
+        values from two different NMF fits -- even a correct one -- aren't
+        expected to land on the same color scale; min-max normalizing each
+        column independently removes that ambiguity, which is why it's
+        what R's own published figure actually plots, not the raw matrix.
+        Set to False to see the untransformed ``components_`` values (only
+        meaningfully comparable to another fit of the *same* model, not
+        across libraries/re-fits).
+    labels : list of str, optional
+        Row labels, one per factorized column, in the same order as
+        ``decomposer.columns_``. Defaults to ``decomposer.columns_``
+        itself; pass ``facedyn.humanise_au_labels(decomposer.columns_)``
+        for readable AU names instead of raw column names.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. A new figure/axes is created if not given.
+    cmap : str, default "Blues"
+        Matplotlib colormap name. The default is a sequential blue scale,
+        matching the R figure's ``colorRampPalette(brewer.pal(6, "Blues"))``.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_nmf_basis_heatmap requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    check_is_fitted(decomposer, "components_")
+    basis = decomposer.components_.T  # (n_features, n_components)
+
+    if normalize:
+        col_min = basis.min(axis=0)
+        col_max = basis.max(axis=0)
+        span = col_max - col_min
+        span = np.where(span == 0, 1.0, span)
+        basis = (basis - col_min) / span
+
+    row_labels = labels if labels is not None else decomposer.columns_
+    col_labels = [f"{decomposer.prefix}{i + 1}" for i in range(decomposer.n_components)]
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4 + 0.4 * len(col_labels), 0.35 * len(row_labels) + 1.5))
+
+    im = ax.imshow(basis, aspect="auto", cmap=cmap, vmin=0 if normalize else None)
+    ax.set_xticks(range(len(col_labels)))
+    ax.set_xticklabels(col_labels)
+    ax.set_yticks(range(len(row_labels)))
+    ax.set_yticklabels(row_labels)
+
+    cbar_label = "loading (min-max normalised per component)" if normalize else "loading"
+    ax.figure.colorbar(im, ax=ax, label=cbar_label)
+
+    ax.set_title("Basis Matrix (W)" + (" - Normalised" if normalize else ""))
+    return ax

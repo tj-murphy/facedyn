@@ -33,11 +33,7 @@ env/
 # small fixtures in tests/validation/fixtures/ replace these for testing.
 Data/
 python_smoothed.csv
-r_smoothed.csv
-r_normalised.csv
-r_normalised_old.csv
-r_NMF.csv
-r_optimal_k_input.csv
+R Validation Data/
 
 # Notes (more for me than anything)
 PIPELINE.md

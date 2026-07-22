@@ -247,3 +247,45 @@ def test_plot_nmf_rank_cv_non_robust_mode_is_not_clipped():
     # Without robust scaling, the axis autoscales to include the outlier.
     assert ax.get_ylim()[1] > 100
     assert "off-scale" not in ax.get_title()
+
+
+def test_plot_nmf_basis_heatmap_runs_and_returns_axes():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_basis_heatmap
+
+    df = make_low_rank_df(n_features=6)
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
+
+    ax = plot_nmf_basis_heatmap(decomposer)
+    assert ax is not None
+    assert len(ax.get_yticklabels()) == 6
+    assert len(ax.get_xticklabels()) == 3
+    assert [t.get_text() for t in ax.get_xticklabels()] == ["nmf1", "nmf2", "nmf3"]
+
+
+def test_plot_nmf_basis_heatmap_normalize_scales_each_column_to_unit_range():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_basis_heatmap
+
+    df = make_low_rank_df(n_features=6)
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
+
+    ax = plot_nmf_basis_heatmap(decomposer, normalize=True)
+    plotted = ax.images[0].get_array()
+    assert np.isclose(plotted.max(axis=0), 1.0).all()
+    assert np.isclose(plotted.min(axis=0), 0.0).all()
+
+
+def test_plot_nmf_basis_heatmap_accepts_custom_labels():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_basis_heatmap
+
+    df = make_low_rank_df(n_features=4)
+    decomposer = NMFDecomposer(n_components=2, random_state=0).fit(df)
+
+    custom_labels = [f"custom_{i}" for i in range(4)]
+    ax = plot_nmf_basis_heatmap(decomposer, labels=custom_labels)
+    assert [t.get_text() for t in ax.get_yticklabels()] == custom_labels

@@ -30,7 +30,7 @@ import pytest
 
 from facedyn.nmf import nmf_rank_cv_sweep
 
-DATA_PATH = Path(__file__).parents[2] / "r_optimal_k_input.csv"
+DATA_PATH = Path(__file__).parents[2] / "R Validation Data" / "r_optimal_k_input.csv"
 
 pytestmark = pytest.mark.skipif(
     not DATA_PATH.exists(), reason="r_optimal_k_input.csv not available locally"
