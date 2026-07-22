@@ -20,6 +20,23 @@ def _resolve_columns(
     return [col for col in X.columns if pattern.search(col)]
 
 
+def max_normalize_columns(matrix: np.ndarray) -> np.ndarray:
+    """Min-max scale each column of `matrix` independently to `[0, 1]`.
+
+    Shared by :func:`plot_nmf_basis_heatmap` and
+    :func:`facedyn.face_maps.plot_nmf_face_maps`, both of which need to
+    remove NMF's per-component scale ambiguity the same way (see
+    :class:`NMFDecomposer`'s docstring) before the values are meaningfully
+    comparable or displayable. Constant columns (span 0) are left at 0
+    rather than raising a divide-by-zero.
+    """
+    col_min = matrix.min(axis=0)
+    col_max = matrix.max(axis=0)
+    span = col_max - col_min
+    span = np.where(span == 0, 1.0, span)
+    return (matrix - col_min) / span
+
+
 def nmf_rank_mse_sweep(
     X: pd.DataFrame,
     ranks: range | list[int] = range(2, 11),
@@ -535,11 +552,7 @@ def plot_nmf_basis_heatmap(
     basis = decomposer.components_.T  # (n_features, n_components)
 
     if normalize:
-        col_min = basis.min(axis=0)
-        col_max = basis.max(axis=0)
-        span = col_max - col_min
-        span = np.where(span == 0, 1.0, span)
-        basis = (basis - col_min) / span
+        basis = max_normalize_columns(basis)
 
     row_labels = labels if labels is not None else decomposer.columns_
     col_labels = [f"{decomposer.prefix}{i + 1}" for i in range(decomposer.n_components)]
