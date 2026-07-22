@@ -201,3 +201,49 @@ def test_plot_nmf_rank_cv_runs_and_returns_axes():
     ax = plot_nmf_rank_cv(result)
     assert ax is not None
     assert len(ax.lines) > 0
+
+
+def _result_with_outlier() -> pd.DataFrame:
+    """Synthetic sweep output mimicking a degenerate masked-NMF replicate:
+    one (rank, rep) cell's test_mse is orders of magnitude larger than
+    every other value, the failure mode plot_nmf_rank_cv's robust mode
+    defends against."""
+    records = []
+    for rank in range(2, 6):
+        for rep in range(3):
+            records.append({
+                "rank": rank, "rep": rep,
+                "train_mse": 1.0 - 0.1 * rank,
+                "test_mse": 0.8 + 0.05 * rank,
+            })
+    records.append({"rank": 5, "rep": 0, "train_mse": 0.5, "test_mse": 500.0})
+    return pd.DataFrame.from_records(records)
+
+
+def test_plot_nmf_rank_cv_robust_mode_clips_outlier_and_uses_median():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_rank_cv
+
+    result = _result_with_outlier()
+    ax = plot_nmf_rank_cv(result, robust=True)
+
+    # The y-axis should be scaled to the well-behaved values, not the outlier.
+    assert ax.get_ylim()[1] < 50
+    # A marker (the outlier triangle) should be drawn beyond the ordinary line/scatter artists.
+    assert any(coll.get_paths() for coll in ax.collections)
+    # The outlier should be called out in the title rather than silently dropped.
+    assert "off-scale" in ax.get_title()
+
+
+def test_plot_nmf_rank_cv_non_robust_mode_is_not_clipped():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_rank_cv
+
+    result = _result_with_outlier()
+    ax = plot_nmf_rank_cv(result, robust=False)
+
+    # Without robust scaling, the axis autoscales to include the outlier.
+    assert ax.get_ylim()[1] > 100
+    assert "off-scale" not in ax.get_title()

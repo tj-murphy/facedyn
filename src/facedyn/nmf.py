@@ -248,15 +248,17 @@ def nmf_rank_cv_sweep(
     return pd.DataFrame.from_records(records)
 
 
-def plot_nmf_rank_cv(result: pd.DataFrame, ax=None):
+def plot_nmf_rank_cv(
+    result: pd.DataFrame, ax=None, robust: bool = True, outlier_z: float = 3.5
+):
     """Plot :func:`nmf_rank_cv_sweep` output: per-fold train/test MSE vs. rank.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
-    Each replicate is drawn as a faint individual line; the mean across
-    replicates is drawn bold, with a vertical marker at the rank with the
-    lowest mean ``test_mse``. Replicates are plotted as separate line
-    groups deliberately — an earlier version of this same plot (in this
+    Each replicate is drawn as a faint individual line; a bold summary line
+    across replicates is drawn on top, with a vertical marker at the rank
+    with the lowest summary ``test_mse``. Replicates are plotted as separate
+    line groups deliberately — an earlier version of this same plot (in this
     project's R exploration) grouped only by train/test color and not by
     replicate, which zigzagged between replicates' values at each rank and
     produced confusing breaks wherever a replicate had a missing value.
@@ -267,6 +269,26 @@ def plot_nmf_rank_cv(result: pd.DataFrame, ax=None):
         Output of :func:`nmf_rank_cv_sweep`.
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
+    robust : bool, default True
+        :func:`_masked_nmf`'s multiplicative updates can occasionally settle
+        on a degenerate fit — most often at higher ranks with limited data —
+        where one component's weight and loading blow up in a way that
+        cancels out on the entries used for fitting but explodes on the
+        held-out ones. That single replicate can then be orders of
+        magnitude larger than every other value, which (a) drags a plain
+        mean summary line far from where most replicates actually sit, and
+        (b) forces a linear y-axis that compresses all the genuinely
+        informative variation near zero. When ``True``, the summary line
+        uses the **median** across replicates instead of the mean, and the
+        y-axis is scaled to a robust range (see ``outlier_z``); any point
+        outside that range is still drawn — pinned to the top of the axis
+        as a ``^`` marker, annotated with its true value — rather than
+        silently dropped. Set to ``False`` to fall back to a plain mean and
+        full autoscaling.
+    outlier_z : float, default 3.5
+        Robust z-score (based on median absolute deviation across all
+        train/test MSE values) beyond which a point is treated as an
+        outlier for axis-scaling purposes. Only used when ``robust=True``.
 
     Returns
     -------
@@ -283,24 +305,66 @@ def plot_nmf_rank_cv(result: pd.DataFrame, ax=None):
     if ax is None:
         _, ax = plt.subplots()
 
-    agg = result.groupby("rank")[["train_mse", "test_mse"]].mean().reset_index()
+    agg = result.groupby("rank")[["train_mse", "test_mse"]].agg(
+        "median" if robust else "mean"
+    ).reset_index()
     colors = {"train_mse": "#009E73", "test_mse": "#D55E00"}
     labels = {"train_mse": "Train", "test_mse": "Test"}
 
+    y_top = None
+    if robust:
+        all_values = pd.concat([result["train_mse"], result["test_mse"]]).dropna()
+        if len(all_values) > 0:
+            median = all_values.median()
+            robust_scale = (all_values - median).abs().median() * 1.4826
+            inliers = (
+                all_values[(all_values - median).abs() / robust_scale <= outlier_z]
+                if robust_scale > 0
+                else all_values
+            )
+            if len(inliers) > 0:
+                y_top = inliers.max() * 1.15
+
+    has_outliers = False
     for col, color in colors.items():
         for _, rep_data in result.groupby("rep"):
             rep_data = rep_data.sort_values("rank")
-            ax.plot(rep_data["rank"], rep_data[col], color=color, alpha=0.25, linewidth=0.8)
-            ax.scatter(rep_data["rank"], rep_data[col], color=color, alpha=0.3, s=15)
+            if y_top is not None:
+                is_outlier = rep_data[col] > y_top
+                plot_y = rep_data[col].clip(upper=y_top)
+            else:
+                is_outlier = pd.Series(False, index=rep_data.index)
+                plot_y = rep_data[col]
+            ax.plot(rep_data["rank"], plot_y, color=color, alpha=0.25, linewidth=0.8)
+            ax.scatter(rep_data["rank"], plot_y, color=color, alpha=0.3, s=15)
+            if is_outlier.any():
+                has_outliers = True
+                off_scale = rep_data[is_outlier]
+                ax.scatter(
+                    off_scale["rank"], [y_top] * len(off_scale), color=color,
+                    marker="^", s=70, zorder=4, edgecolor="black", linewidth=0.5,
+                )
+                for _, row in off_scale.iterrows():
+                    ax.annotate(
+                        f"{row[col]:.0f}", (row["rank"], y_top),
+                        textcoords="offset points", xytext=(4, 4),
+                        fontsize=7, color=color,
+                    )
         ax.plot(agg["rank"], agg[col], color=color, linewidth=2.2, label=labels[col])
         ax.scatter(agg["rank"], agg[col], color=color, s=40, zorder=3)
 
     best_rank = agg.loc[agg["test_mse"].idxmin(), "rank"]
     ax.axvline(best_rank, linestyle="--", color="grey", linewidth=1)
 
+    if y_top is not None:
+        ax.set_ylim(top=y_top * 1.05)
+
     ax.set_xlabel("Rank (k)")
     ax.set_ylabel("MSE")
-    ax.set_title("Cross-validated NMF rank selection")
+    title = "Cross-validated NMF rank selection"
+    if has_outliers:
+        title += "\n(▲ = off-scale point, true value annotated)"
+    ax.set_title(title)
     ax.legend()
     return ax
 
