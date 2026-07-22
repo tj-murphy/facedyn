@@ -12,6 +12,8 @@ It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), inclu
 - Pair-matched test/train splitting
 - Dimensionality reduction (Non-Negative Matrix Factorisation)
     - Including function to find optimal k
+    - Fitting NMF
+    - Visualising NMF matrices
 - Interpretable time series feature extraction (CMFTS; Báldan & Benítez, 2023)
 - Feature selection
 - Classification
