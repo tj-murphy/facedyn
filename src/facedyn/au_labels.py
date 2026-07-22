@@ -31,6 +31,28 @@ AU_DESCRIPTIONS: dict[str, str] = {
 _AU_CODE_PATTERN = re.compile(r"AU\d{2}", re.IGNORECASE)
 
 
+def extract_au_code(column: str) -> str | None:
+    """Extract the ``AU##`` code from a column name, or ``None`` if absent.
+
+    Shared by :func:`humanise_au_label` and
+    :func:`facedyn.face_maps.plot_nmf_face_maps`, both of which need to
+    identify which AU a column refers to regardless of surrounding naming
+    convention (``AU01_r``, ``smth_AU01_r``, ``AU01_inner_brow_raiser``, ...).
+    Unlike :func:`humanise_au_label`, this doesn't check the code against
+    :data:`AU_DESCRIPTIONS` -- it returns any ``AU##``-shaped code found,
+    known or not, since callers may want to detect and report unrecognized
+    codes themselves rather than have them silently swallowed.
+
+    Examples
+    --------
+    >>> extract_au_code("smth_AU01_r")
+    'AU01'
+    >>> extract_au_code("video_filename")
+    """
+    match = _AU_CODE_PATTERN.search(column)
+    return match.group(0).upper() if match else None
+
+
 def humanise_au_label(column: str) -> str:
     """Convert an AU column name to a human-readable ``"AU## - Description"`` label.
 
@@ -62,10 +84,9 @@ def humanise_au_label(column: str) -> str:
     >>> humanise_au_label("video_filename")
     'video_filename'
     """
-    match = _AU_CODE_PATTERN.search(column)
-    if not match:
+    code = extract_au_code(column)
+    if code is None:
         return column
-    code = match.group(0).upper()
     description = AU_DESCRIPTIONS.get(code)
     if description is None:
         return column
