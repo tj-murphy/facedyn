@@ -7,7 +7,7 @@ data and designing transparent classification pipelines.
 
 It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), including:
 
-- Temporal smoothing
+- Temporal smoothing (inc. visualisations)
 - Normalisation
 - Pair-matched test/train splitting
 - Dimensionality reduction (Non-Negative Matrix Factorisation)
@@ -15,6 +15,8 @@ It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), inclu
     - Fitting NMF
     - Visualising NMF matrices
     - Visualising NMF component face maps (implementation from py-feat; Cheong et al., 2023)
+
+TO DO:
 - Interpretable time series feature extraction (CMFTS; Báldan & Benítez, 2023)
 - Feature selection
 - Classification
