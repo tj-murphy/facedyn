@@ -76,3 +76,104 @@ class RollingSmoother(BaseEstimator, TransformerMixin):
             window=self.window, min_periods=self.window
         ).mean()[::-1]
         return rolled.ffill().bfill()
+
+
+def plot_smoothing_comparison(
+    df: pd.DataFrame,
+    column: str,
+    video_filename: str,
+    smoothed_column: str | None = None,
+    group_col: str = "video_filename",
+    frame_col: str = "frame",
+    mode: str = "stacked",
+    ax=None,
+):
+    """Plot a raw AU column against its smoothed counterpart for one video.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    Intended for picking a rolling ``window`` size: run
+    :class:`RollingSmoother` with a candidate window, then use this to see
+    how aggressively it flattens the signal for a given video/column.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Must contain ``column``, ``smoothed_column``, ``group_col`` and
+        ``frame_col``. Typically the output of
+        :meth:`RollingSmoother.transform`.
+    column : str
+        Raw column to plot, e.g. ``"AU07_r"``.
+    video_filename : str
+        Value of ``group_col`` identifying which video's rows to plot.
+    smoothed_column : str, optional
+        Smoothed column to plot. Defaults to ``f"{self.prefix}{column}"``
+        using :class:`RollingSmoother`'s default prefix, i.e.
+        ``f"smth_{column}"``.
+    group_col : str, default "video_filename"
+        Column identifying which rows belong to which video.
+    frame_col : str, default "frame"
+        Column used for the x-axis.
+    mode : {"stacked", "overlay"}, default "stacked"
+        ``"stacked"`` draws raw and smoothed on two separate, vertically
+        stacked axes sharing an x-axis. ``"overlay"`` draws both as lines on
+        a single axes. ``ax`` is ignored when ``mode="stacked"`` since two
+        axes are required.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on when ``mode="overlay"``. A new figure/axes is
+        created if not given.
+
+    Returns
+    -------
+    matplotlib.axes.Axes or list of matplotlib.axes.Axes
+        A single Axes for ``mode="overlay"``, or ``[raw_ax, smoothed_ax]``
+        for ``mode="stacked"``.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_smoothing_comparison requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    if mode not in ("stacked", "overlay"):
+        raise ValueError(f"mode must be 'stacked' or 'overlay', got {mode!r}")
+
+    if smoothed_column is None:
+        smoothed_column = f"smth_{column}"
+
+    video_data = df[df[group_col] == video_filename].sort_values(frame_col)
+    raw_color, smoothed_color = "#009E73", "#D55E00"
+
+    if mode == "overlay":
+        if ax is None:
+            _, ax = plt.subplots()
+        ax.plot(
+            video_data[frame_col], video_data[column],
+            color=raw_color, alpha=0.6, linewidth=1, label="Raw",
+        )
+        ax.plot(
+            video_data[frame_col], video_data[smoothed_column],
+            color=smoothed_color, linewidth=1.5, label="Smoothed",
+        )
+        ax.set_xlabel(frame_col)
+        ax.set_ylabel(column)
+        ax.set_title(f"{column} - Raw vs. Smoothed ({video_filename})")
+        ax.legend()
+        return ax
+
+    _, (raw_ax, smoothed_ax) = plt.subplots(2, 1, sharex=True, sharey=True)
+    raw_ax.plot(video_data[frame_col], video_data[column], color=raw_color, linewidth=1)
+    raw_ax.set_ylabel(column)
+    raw_ax.set_title(f"Raw ({video_filename})")
+
+    smoothed_ax.plot(
+        video_data[frame_col], video_data[smoothed_column],
+        color=smoothed_color, linewidth=1,
+    )
+    smoothed_ax.set_xlabel(frame_col)
+    smoothed_ax.set_ylabel(column)
+    smoothed_ax.set_title("Smoothed")
+
+    return [raw_ax, smoothed_ax]
