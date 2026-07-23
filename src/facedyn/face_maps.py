@@ -414,6 +414,38 @@ def _muscle_polygons(x, y) -> dict[str, list[tuple[float, float]]]:
             (x[45] + eye_r_width2 / 3, y[45] - eye_r_width2 / 2),
             (x[45] + eye_r_width / 2, y[45]),
         ],
+        "orb_oc_l": [
+            (x[36] - eye_l_width / 3, y[36] + eye_l_width / 2),
+            (x[36], y[36] + eye_l_width),
+            (x[37], y[37] + eye_l_width),
+            (x[38], y[38] + eye_l_width),
+            (x[39], y[39] + eye_l_width),
+            (x[39] + eye_l_width / 3, y[39] + eye_l_width / 2),
+            (x[39] + eye_l_width / 2, y[39]),
+            (x[39] + eye_l_width / 3, y[39] - eye_l_width / 2),
+            (x[39], y[39] - eye_l_width),
+            (x[40], y[40] - eye_l_width),
+            (x[41], y[41] - eye_l_width),
+            (x[36], y[36] - eye_l_width),
+            (x[36] - eye_l_width / 3, y[36] - eye_l_width / 2),
+            (x[36] - eye_l_width / 2, y[36]),
+        ],
+        "orb_oc_r": [
+            (x[42] - eye_r_width / 3, y[42] + eye_r_width / 2),
+            (x[42], y[42] + eye_r_width),
+            (x[43], y[43] + eye_r_width),
+            (x[44], y[44] + eye_r_width),
+            (x[45], y[45] + eye_r_width),
+            (x[45] + eye_r_width / 3, y[45] + eye_r_width / 2),
+            (x[45] + eye_r_width / 2, y[45]),
+            (x[45] + eye_r_width / 3, y[45] - eye_r_width / 2),
+            (x[45], y[45] - eye_r_width),
+            (x[46], y[46] - eye_r_width),
+            (x[47], y[47] - eye_r_width),
+            (x[42], y[42] - eye_r_width),
+            (x[42] - eye_r_width / 3, y[42] - eye_r_width / 2),
+            (x[42] - eye_r_width / 2, y[42]),
+        ],
     }
 
 
@@ -440,19 +472,13 @@ _MUSCLE_TO_AU: dict[str, str] = {
     "orb_oc_l_inner": "AU45", "orb_oc_r_inner": "AU45",
 }
 
-# "orb_oc_l"/"orb_oc_r" (AU07, lid tightener) aren't among the polygons
-# built by _muscle_polygons() above (py-feat's originals use a computed
-# eye-ring shape shared with the "_outer"/"_inner" variants) -- reuse the
-# outer ring's geometry for the plain name so AU07 still renders.
-_ALIAS_MUSCLES = {"orb_oc_l": "orb_oc_l_outer", "orb_oc_r": "orb_oc_r_outer"}
-
 
 def plot_nmf_face_maps(
     decomposer: NMFDecomposer,
     ax=None,
     normalize: bool = True,
     cmap: str = "Blues",
-    alpha: float = 0.8,
+    alpha: float = 1.0,
     warn_unmapped: bool = True,
 ):
     """Plot a schematic face map per NMF component, deformed and shaded by
@@ -490,13 +516,25 @@ def plot_nmf_face_maps(
         range it was trained on, and will saturate every region to the
         same color.
     cmap : str, default "Blues"
-        Matplotlib colormap name, applied to each region's AU value.
-    alpha : float, default 0.8
-        Opacity of each shaded muscle region. Regions overlap
-        substantially in this design (e.g. several forehead/eye regions
-        share space) -- less than 1 lets the shape underneath remain
-        visible through the shading, rather than later regions fully
-        occluding earlier ones.
+        Matplotlib colormap name, applied to each region's AU value. To
+        match py-feat's own ``get_heat`` exactly, a region's color is looked
+        up at ``int(value * 100) / 150`` rather than at ``value`` directly
+        -- py-feat quantizes into a 151-level discrete palette and only
+        ever indexes the bottom 101 of those levels (``au`` is scaled to
+        ``[0, 100]``, then truncated to an int), so even a region at full
+        loading renders at ~67% of the colormap's range, not its darkest
+        end -- and this reproduces that quantization and ceiling faithfully
+        rather than using the colormap's full continuous range.
+    alpha : float, default 1.0
+        Multiplier on a shaded muscle region's opacity. A region's actual
+        opacity is ``value * alpha``, matching py-feat's own ``get_heat``
+        (whose opacity is exactly ``au_value / 100``, i.e. ``alpha=1.0``
+        here) -- a region with little to no loading fades toward fully
+        transparent rather than staying visible at a flat shade. Set below
+        1.0 to additionally dim every region uniformly (e.g. if regions
+        overlapping substantially in this design make a fully-opaque
+        region's edge, drawn on top, hide too much of an earlier region
+        underneath it).
     warn_unmapped : bool, default True
         Warn once, listing any of ``decomposer``'s AU columns that have no
         facial *region* in this face-map style (their loading still
@@ -556,17 +594,16 @@ def plot_nmf_face_maps(
             component_ax.plot(path_x, path_y, color="k", linewidth=1, zorder=2)
 
         polygons = _muscle_polygons(x, y)
-        drawable = dict(polygons)
-        for alias, source in _ALIAS_MUSCLES.items():
-            drawable[alias] = polygons[source]
-
-        for muscle, vertices in drawable.items():
+        for muscle, vertices in polygons.items():
             au_code = _MUSCLE_TO_AU.get(muscle)
             value = 0.0
             if au_code is not None and au_code in au_codes:
                 value = basis[au_codes.index(au_code), component_idx]
             component_ax.add_patch(
-                Polygon(vertices, facecolor=colormap(value), edgecolor="none", alpha=alpha, zorder=1)
+                Polygon(
+                    vertices, facecolor=colormap(int(value * 100) / 150), edgecolor="none",
+                    alpha=value * alpha, zorder=1,
+                )
             )
 
         for eye_idx in ([36, 37, 38, 39, 40, 41], [42, 43, 44, 45, 46, 47]):

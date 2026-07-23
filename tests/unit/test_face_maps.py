@@ -49,12 +49,9 @@ def test_muscle_to_au_values_are_well_formed_codes():
 
 
 def test_muscle_to_au_keys_are_drawable_polygons():
-    from facedyn.face_maps import _ALIAS_MUSCLES
-
     polygons = _muscle_polygons(_NEUTRAL_X, _NEUTRAL_Y)
-    drawable = set(polygons) | set(_ALIAS_MUSCLES)
     for muscle in _MUSCLE_TO_AU:
-        assert muscle in drawable, muscle
+        assert muscle in polygons, muscle
 
 
 def test_predict_landmarks_at_zero_roughly_matches_neutral_template():
@@ -179,20 +176,41 @@ def test_face_map_shades_the_region_matching_the_dominant_au(monkeypatch):
 
     assert target_patch is not None
     assert unrelated_patch is not None
-    assert np.allclose(target_patch.get_facecolor(), colormap(1.0), atol=1e-6)
-    assert np.allclose(unrelated_patch.get_facecolor(), colormap(0.0), atol=1e-6)
+    # Matching py-feat's own get_heat exactly: color is looked up at
+    # int(value * 100) / 150 (a 151-level discrete palette, only ever
+    # indexed up to level 100) rather than at `value` directly -- so even
+    # full loading (value=1.0) doesn't reach the colormap's darkest end.
+    assert np.allclose(target_patch.get_facecolor(), colormap(100 / 150), atol=1e-6)
+    # An unloaded region's opacity fades to 0 (matching py-feat's own
+    # get_heat, whose alpha is au_value / 100) -- its RGB still comes from
+    # the colormap's zero point, but it's fully transparent, not flat-shaded.
+    assert np.allclose(unrelated_patch.get_facecolor()[:3], colormap(0.0)[:3], atol=1e-6)
+    assert unrelated_patch.get_alpha() == 0.0
 
 
-def test_alias_muscle_uses_its_own_au_mapping_not_its_source_polygons(monkeypatch):
-    """Regression test: orb_oc_l/orb_oc_r (AU07) reuse orb_oc_l_outer/
-    orb_oc_r_outer's polygon shape (AU06) purely for geometry -- drawing
-    must color that shape by AU07's value, not silently fall back to
-    AU06's, which a naive `_MUSCLE_TO_AU[source]` lookup would do."""
+def test_orb_oc_l_has_its_own_geometry_distinct_from_outer_and_inner():
+    """Regression test: py-feat's own draw_muscles defines "orb_oc_l" (AU07,
+    lid tightener) as its own full eye-ring polygon, geometrically distinct
+    from both "orb_oc_l_outer" (AU06's smaller crescent) and
+    "orb_oc_l_inner" (AU45's smaller ring) -- not an alias/reuse of either.
+    An earlier version of this module incorrectly aliased "orb_oc_l" onto
+    "orb_oc_l_outer"'s geometry, which would draw AU07 in AU06's region."""
+    polygons = _muscle_polygons(_NEUTRAL_X, _NEUTRAL_Y)
+    orb_oc_l = np.array(polygons["orb_oc_l"])
+    orb_oc_l_outer = np.array(polygons["orb_oc_l_outer"])
+    orb_oc_l_inner = np.array(polygons["orb_oc_l_inner"])
+
+    assert orb_oc_l.shape != orb_oc_l_outer.shape or not np.allclose(orb_oc_l, orb_oc_l_outer)
+    assert orb_oc_l.shape != orb_oc_l_inner.shape or not np.allclose(orb_oc_l, orb_oc_l_inner)
+
+
+def test_orb_oc_l_region_shaded_by_au07(monkeypatch):
+    """Behavioral check that the (now correctly distinct) "orb_oc_l" polygon
+    is shaded by AU07's value, matching _MUSCLE_TO_AU's mapping."""
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import facedyn.face_maps as face_maps
-    from facedyn.face_maps import _ALIAS_MUSCLES
 
     monkeypatch.setattr(
         face_maps, "_predict_landmarks",
@@ -205,17 +223,17 @@ def test_alias_muscle_uses_its_own_au_mapping_not_its_source_polygons(monkeypatc
     decomposer = make_fitted_decomposer(columns, components)
 
     axes = face_maps.plot_nmf_face_maps(decomposer, warn_unmapped=False, alpha=1.0)
-    shape = np.array(_muscle_polygons(_NEUTRAL_X, _NEUTRAL_Y)[_ALIAS_MUSCLES["orb_oc_l"]])
+    shape = np.array(_muscle_polygons(_NEUTRAL_X, _NEUTRAL_Y)["orb_oc_l"])
 
     colormap = plt.get_cmap("Blues")
-    alias_patch = None
+    target_patch = None
     for patch in axes[0].patches:
         verts = patch.get_xy()[:-1] if len(patch.get_xy()) > len(shape) else patch.get_xy()
         if verts.shape == shape.shape and np.allclose(verts, shape):
-            alias_patch = patch
+            target_patch = patch
 
-    assert alias_patch is not None
-    assert np.allclose(alias_patch.get_facecolor(), colormap(1.0), atol=1e-6)
+    assert target_patch is not None
+    assert np.allclose(target_patch.get_facecolor(), colormap(100 / 150), atol=1e-6)
 
 
 def test_normalize_false_uses_raw_component_values(monkeypatch):

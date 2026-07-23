@@ -47,3 +47,9 @@ session-summaries/
 # which released a new version with rank selection stuff after I last used it.
 r_rank_selection/
 
+# Diagnosis scripts
+# Mainly to debug python stuff
+diagnose*
+diagnose.py
+face_maps_*
+smoothing_diagnostic.png
