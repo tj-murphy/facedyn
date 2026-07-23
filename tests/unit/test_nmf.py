@@ -386,6 +386,19 @@ def test_cophenetic_correlation_deterministic_with_same_seed():
     pd.testing.assert_frame_equal(result_a, result_b)
 
 
+def test_cophenetic_correlation_n_jobs_matches_serial_exactly():
+    # n_jobs is purely a wall-clock optimization -- every fit is seeded
+    # independently of execution order, so parallel must reproduce the
+    # sequential default bit-for-bit, not just approximately.
+    df = make_low_rank_df(n_samples=60, n_features=8, rank=3, seed=0)
+    serial = nmf_cophenetic_correlation(df, ranks=range(2, 4), n_runs=3, random_state=0)
+    parallel = nmf_cophenetic_correlation(
+        df, ranks=range(2, 4), n_runs=3, random_state=0, n_jobs=2
+    )
+
+    pd.testing.assert_frame_equal(serial, parallel)
+
+
 def test_cophenetic_correlation_high_at_true_block_count_lower_when_overspecified():
     df = make_blocky_df(n_per_block=30, n_blocks=3, n_features=9, noise=0.01, seed=2)
     result = nmf_cophenetic_correlation(df, ranks=[3, 9], n_runs=8, random_state=0)

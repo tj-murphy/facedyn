@@ -11,7 +11,7 @@ It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), inclu
 - Normalisation
 - Pair-matched test/train splitting
 - Dimensionality reduction (Non-Negative Matrix Factorisation)
-    - Including function to find optimal k
+    - Including functions to find optimal k
     - Fitting NMF
     - Visualising NMF matrices
     - Visualising NMF component face maps (implementation from py-feat; Cheong et al., 2023)

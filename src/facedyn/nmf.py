@@ -6,6 +6,7 @@ import re
 
 import numpy as np
 import pandas as pd
+from joblib import Parallel, delayed
 from scipy.cluster.hierarchy import cophenet, linkage
 from scipy.spatial.distance import squareform
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -420,6 +421,7 @@ def nmf_cophenetic_correlation(
     X: pd.DataFrame,
     ranks: range | list[int] = range(2, 11),
     n_runs: int = 10,
+    n_jobs: int | None = None,
     columns: list[str] | None = None,
     column_pattern: str = r"^smth_",
     random_state: int | None = None,
@@ -481,6 +483,20 @@ def nmf_cophenetic_correlation(
         Number of independent random-init NMF fits per rank used to build
         the consensus matrix. More runs give a more stable estimate at
         proportionally higher cost.
+    n_jobs : int, optional
+        Number of parallel worker processes for the ``len(ranks) *
+        n_runs`` independent NMF fits (via ``joblib``, following
+        scikit-learn's own convention: ``None``/``1`` = sequential, ``-1``
+        = all cores). Purely a wall-clock optimization — every fit is
+        seeded independently of the others regardless of execution order,
+        so results are identical to the sequential default for any value
+        of ``n_jobs``. The O(n_samples^2) consensus/linkage cost (see
+        below) is unaffected either way — this only parallelizes the NMF
+        refitting, which is what actually dominates runtime at the
+        subsample sizes this function is meant for. Only worth setting
+        for larger workloads: process start-up overhead can make small
+        ones (a handful of ranks/runs on a few hundred rows) *slower*
+        under parallel execution than sequential.
     columns : list of str, optional
         Explicit columns to factorize. If not given, selected via
         ``column_pattern``.
@@ -506,17 +522,26 @@ def nmf_cophenetic_correlation(
     data = X[cols].to_numpy()
     n_samples = data.shape[0]
 
+    def _dominant_labels(k: int, run: int) -> np.ndarray:
+        seed = None if random_state is None else random_state + run * 1000 + k
+        model = NMF(
+            n_components=k, init="random", random_state=seed,
+            max_iter=max_iter, tol=tol,
+        )
+        W = model.fit_transform(data)
+        return W.argmax(axis=1)
+
+    tasks = [(k, run) for k in ranks for run in range(n_runs)]
+    all_labels = Parallel(n_jobs=n_jobs)(delayed(_dominant_labels)(k, run) for k, run in tasks)
+
+    labels_by_rank: dict[int, list[np.ndarray]] = {k: [] for k in ranks}
+    for (k, _run), dominant in zip(tasks, all_labels):
+        labels_by_rank[k].append(dominant)
+
     records = []
     for k in ranks:
         consensus = np.zeros((n_samples, n_samples))
-        for run in range(n_runs):
-            seed = None if random_state is None else random_state + run * 1000 + k
-            model = NMF(
-                n_components=k, init="random", random_state=seed,
-                max_iter=max_iter, tol=tol,
-            )
-            W = model.fit_transform(data)
-            dominant = W.argmax(axis=1)
+        for dominant in labels_by_rank[k]:
             consensus += (dominant[:, None] == dominant[None, :])
         consensus /= n_runs
 
