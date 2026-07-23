@@ -6,6 +6,8 @@ import re
 
 import numpy as np
 import pandas as pd
+from scipy.cluster.hierarchy import cophenet, linkage
+from scipy.spatial.distance import squareform
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.decomposition import NMF
 from sklearn.utils.validation import check_is_fitted
@@ -164,11 +166,15 @@ def _masked_nmf(
     return W, H
 
 
+_SEED_STRIDE = 1_000_000
+
+
 def nmf_rank_cv_sweep(
     X: pd.DataFrame,
     ranks: range | list[int] = range(2, 11),
     test_fraction: float = 0.1,
     n_replicates: int = 3,
+    n_seeds: int = 1,
     columns: list[str] | None = None,
     column_pattern: str = r"^smth_",
     random_state: int | None = None,
@@ -214,7 +220,22 @@ def nmf_rank_cv_sweep(
     test_fraction : float, default 0.1
         Fraction of matrix entries held out per replicate.
     n_replicates : int, default 3
-        Number of independent random holdout masks to average over.
+        Number of independent random holdout masks to average over,
+        drawn from a single seeded stream (see ``n_seeds`` for a stronger
+        check that also varies that stream itself).
+    n_seeds : int, default 1
+        Number of independent top-level seeds to repeat the whole
+        ``n_replicates``-run sweep under. ``n_replicates`` alone only
+        draws multiple masks/initializations from the *one* stream
+        derived from ``random_state``; it doesn't test whether the
+        result is sensitive to that particular seed choice. Setting
+        ``n_seeds > 1`` additionally varies the top-level seed itself
+        (each seed offset from ``random_state`` by a large stride, so
+        their streams don't overlap) and adds a ``seed`` column to the
+        output identifying which top-level seed produced each row. The
+        default of 1 reproduces the original single-seed output exactly
+        (no ``seed`` column) — this is an opt-in robustness check, not a
+        replacement for choosing ``n_replicates``.
     columns : list of str, optional
         Explicit columns to factorize. If not given, selected via
         ``column_pattern``.
@@ -231,36 +252,39 @@ def nmf_rank_cv_sweep(
     -------
     pd.DataFrame
         Columns ``rank``, ``rep``, ``train_mse``, ``test_mse`` — one row
-        per (rank, replicate) combination. Does not pick a rank
-        automatically; inspect or plot (see :func:`plot_nmf_rank_cv`) to
-        choose one.
+        per (rank, replicate) combination — plus a leading ``seed``
+        column when ``n_seeds > 1``. Does not pick a rank automatically;
+        inspect or plot (see :func:`plot_nmf_rank_cv`) to choose one.
     """
     cols = _resolve_columns(X, columns, column_pattern)
     data = X[cols].to_numpy()
-    rng = np.random.default_rng(random_state)
 
     records = []
-    for rep in range(n_replicates):
-        mask = (rng.random(data.shape) >= test_fraction).astype(float)
-        test_mask = 1.0 - mask
+    for seed_idx in range(n_seeds):
+        seed_state = None if random_state is None else random_state + seed_idx * _SEED_STRIDE
+        rng = np.random.default_rng(seed_state)
 
-        for k in ranks:
-            try:
-                seed = None if random_state is None else random_state + rep * 1000 + k
-                W, H = _masked_nmf(
-                    data, mask, n_components=k,
-                    max_iter=max_iter, tol=tol, random_state=seed,
-                )
-                recon = W @ H
-                train_mse = ((mask * (data - recon)) ** 2).sum() / mask.sum()
-                test_mse = ((test_mask * (data - recon)) ** 2).sum() / test_mask.sum()
-            except Exception:
-                train_mse, test_mse = np.nan, np.nan
+        for rep in range(n_replicates):
+            mask = (rng.random(data.shape) >= test_fraction).astype(float)
+            test_mask = 1.0 - mask
 
-            records.append({
-                "rank": k, "rep": rep,
-                "train_mse": train_mse, "test_mse": test_mse,
-            })
+            for k in ranks:
+                try:
+                    init_seed = None if seed_state is None else seed_state + rep * 1000 + k
+                    W, H = _masked_nmf(
+                        data, mask, n_components=k,
+                        max_iter=max_iter, tol=tol, random_state=init_seed,
+                    )
+                    recon = W @ H
+                    train_mse = ((mask * (data - recon)) ** 2).sum() / mask.sum()
+                    test_mse = ((test_mask * (data - recon)) ** 2).sum() / test_mask.sum()
+                except Exception:
+                    train_mse, test_mse = np.nan, np.nan
+
+                row = {"rank": k, "rep": rep, "train_mse": train_mse, "test_mse": test_mse}
+                if n_seeds > 1:
+                    row = {"seed": seed_idx, **row}
+                records.append(row)
 
     return pd.DataFrame.from_records(records)
 
@@ -278,7 +302,11 @@ def plot_nmf_rank_cv(
     line groups deliberately — an earlier version of this same plot (in this
     project's R exploration) grouped only by train/test color and not by
     replicate, which zigzagged between replicates' values at each rank and
-    produced confusing breaks wherever a replicate had a missing value.
+    produced confusing breaks wherever a replicate had a missing value. When
+    ``result`` has a ``seed`` column (see :func:`nmf_rank_cv_sweep`'s
+    ``n_seeds``), lines are grouped by ``(seed, rep)`` for the same reason —
+    otherwise two different seeds' ``rep=0`` rows would be zigzagged
+    together as if they were one trajectory.
 
     Parameters
     ----------
@@ -342,9 +370,11 @@ def plot_nmf_rank_cv(
             if len(inliers) > 0:
                 y_top = inliers.max() * 1.15
 
+    line_group_cols = ["seed", "rep"] if "seed" in result.columns else ["rep"]
+
     has_outliers = False
     for col, color in colors.items():
-        for _, rep_data in result.groupby("rep"):
+        for _, rep_data in result.groupby(line_group_cols):
             rep_data = rep_data.sort_values("rank")
             if y_top is not None:
                 is_outlier = rep_data[col] > y_top
@@ -383,6 +413,165 @@ def plot_nmf_rank_cv(
         title += "\n(▲ = off-scale point, true value annotated)"
     ax.set_title(title)
     ax.legend()
+    return ax
+
+
+def nmf_cophenetic_correlation(
+    X: pd.DataFrame,
+    ranks: range | list[int] = range(2, 11),
+    n_runs: int = 10,
+    columns: list[str] | None = None,
+    column_pattern: str = r"^smth_",
+    random_state: int | None = None,
+    max_iter: int = 750,
+    tol: float = 1e-6,
+) -> pd.DataFrame:
+    """Cophenetic correlation per rank - an NMF stability diagnostic for
+    rank selection, independent of reconstruction error.
+
+    Not part of the original R pipeline (no equivalent computation exists
+    there - see ``PIPELINE.md``); a new addition, since the original
+    analysis's rank choice combined a single train-only MSE-vs-rank curve
+    with alignment to prior work, and this package's own
+    :func:`nmf_rank_cv_sweep` re-checked that with held-out reconstruction
+    error but is still fundamentally an accuracy-based criterion.
+    Implements the complementary, stability-based criterion from Brunet et
+    al. (2004), "Metagenes and molecular pattern discovery using matrix
+    factorization": for a given rank, fit NMF ``n_runs`` times from
+    independent random initializations, and for each run assign every row
+    to its *dominant component* (the column with the largest weight in
+    that row's slice of ``W``). Average, across runs, how often each pair
+    of rows landed in the same dominant component into a single
+    "consensus matrix" - entries near 1 mean that pair was assigned
+    together almost every run, entries near 0 mean almost never. The
+    cophenetic correlation coefficient then measures how cleanly
+    block-structured that consensus matrix is (hierarchical clustering on
+    ``1 - consensus`` as a distance, then correlating the dendrogram's
+    implied distances against the actual ones): a rank whose row-clustering
+    is genuinely stable across random restarts scores close to 1; one
+    where restarts disagree scores lower. This typically starts dropping
+    once rank exceeds the number of genuinely distinct, well-separated
+    components in the data — a signal reconstruction error alone can miss,
+    since more components can always reduce reconstruction error even as
+    their row-assignments become unstable.
+
+    Deliberately uses ``init="random"`` rather than the rest of this
+    module's usual ``"nndsvda"`` (see :func:`nmf_rank_mse_sweep`,
+    :class:`NMFDecomposer`): ``nndsvda`` is a near-deterministic SVD-based
+    init, so repeated runs would mostly converge to the same solution and
+    the consensus matrix would trivially look stable regardless of rank —
+    genuinely random restarts are the point here.
+
+    **Cost warning**: builds an ``n_samples x n_samples`` consensus matrix
+    and runs hierarchical clustering on it — both ``O(n_samples^2)`` in
+    memory/time. This is meant for a manageable subsample (a few hundred
+    to a couple of thousand rows), not the full ~90k-row training set;
+    subsample ``X`` yourself before calling this, the same way the
+    ``facedyn`` demo notebook subsamples for :func:`nmf_rank_cv_sweep`.
+
+    Parameters
+    ----------
+    X : pd.DataFrame
+        Data containing the columns to factorize (plus any other columns,
+        which are ignored). Subsample before calling - see cost warning
+        above.
+    ranks : range or list of int, default range(2, 11)
+        Candidate values of ``n_components`` to try.
+    n_runs : int, default 10
+        Number of independent random-init NMF fits per rank used to build
+        the consensus matrix. More runs give a more stable estimate at
+        proportionally higher cost.
+    columns : list of str, optional
+        Explicit columns to factorize. If not given, selected via
+        ``column_pattern``.
+    column_pattern : str, default r"^smth_"
+        Regex used to select columns when ``columns`` is not given.
+    random_state : int, optional
+        Seed for the NMF random initializations.
+    max_iter : int, default 750
+        Passed to :class:`sklearn.decomposition.NMF`.
+    tol : float, default 1e-6
+        Passed to :class:`sklearn.decomposition.NMF`.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``rank`` and ``cophenetic_correlation`` - one row per
+        value in ``ranks``. Does not pick a rank automatically; inspect or
+        plot (see :func:`plot_nmf_cophenetic_correlation`) alongside
+        :func:`nmf_rank_cv_sweep`'s reconstruction-error evidence, not in
+        place of it.
+    """
+    cols = _resolve_columns(X, columns, column_pattern)
+    data = X[cols].to_numpy()
+    n_samples = data.shape[0]
+
+    records = []
+    for k in ranks:
+        consensus = np.zeros((n_samples, n_samples))
+        for run in range(n_runs):
+            seed = None if random_state is None else random_state + run * 1000 + k
+            model = NMF(
+                n_components=k, init="random", random_state=seed,
+                max_iter=max_iter, tol=tol,
+            )
+            W = model.fit_transform(data)
+            dominant = W.argmax(axis=1)
+            consensus += (dominant[:, None] == dominant[None, :])
+        consensus /= n_runs
+
+        condensed = squareform(1.0 - consensus, checks=False)
+        coph_corr, _ = cophenet(linkage(condensed, method="average"), condensed)
+
+        records.append({"rank": k, "cophenetic_correlation": coph_corr})
+
+    return pd.DataFrame.from_records(records)
+
+
+def plot_nmf_cophenetic_correlation(result: pd.DataFrame, ax=None):
+    """Plot :func:`nmf_cophenetic_correlation` output: cophenetic
+    correlation vs. rank.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    A complementary view to :func:`plot_nmf_rank_cv`: that plot measures
+    fit accuracy, this measures how *stable* each rank's row-clustering is
+    across random restarts. Look for a rank that's still close to 1 but
+    about to drop at the next rank tried - that's the point beyond which
+    additional components stop corresponding to a distinct, reproducible
+    pattern rather than an unstable split of an existing one.
+
+    Parameters
+    ----------
+    result : pd.DataFrame
+        Output of :func:`nmf_cophenetic_correlation`.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. A new figure/axes is created if not given.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_nmf_cophenetic_correlation requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    result = result.sort_values("rank")
+    ax.plot(
+        result["rank"], result["cophenetic_correlation"],
+        color="#0072B2", marker="o", linewidth=2,
+    )
+    ax.set_xlabel("Rank (k)")
+    ax.set_ylabel("Cophenetic correlation")
+    ax.set_ylim(0, 1.05)
+    ax.set_title("NMF clustering stability vs. rank")
     return ax
 
 

@@ -4,7 +4,13 @@ import pytest
 from sklearn.decomposition import NMF as SklearnNMF
 
 import facedyn.nmf as facedyn_nmf
-from facedyn.nmf import NMFDecomposer, _masked_nmf, nmf_rank_cv_sweep, nmf_rank_mse_sweep
+from facedyn.nmf import (
+    NMFDecomposer,
+    _masked_nmf,
+    nmf_cophenetic_correlation,
+    nmf_rank_cv_sweep,
+    nmf_rank_mse_sweep,
+)
 
 # The paper's actual max_iter/tol settings (kept as this module's defaults
 # for fidelity) don't always fully converge on tiny synthetic test
@@ -170,6 +176,52 @@ def test_cv_sweep_same_random_state_is_deterministic():
     pd.testing.assert_frame_equal(result_a, result_b)
 
 
+def test_cv_sweep_default_n_seeds_has_no_seed_column():
+    df = make_low_rank_df()
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 4), n_replicates=2, random_state=0)
+
+    assert set(result.columns) == {"rank", "rep", "train_mse", "test_mse"}
+
+
+def test_cv_sweep_n_seeds_1_matches_default_behaviour_exactly():
+    df = make_low_rank_df()
+    result_default = nmf_rank_cv_sweep(df, ranks=range(2, 4), n_replicates=2, random_state=9)
+    result_explicit = nmf_rank_cv_sweep(
+        df, ranks=range(2, 4), n_replicates=2, n_seeds=1, random_state=9
+    )
+
+    pd.testing.assert_frame_equal(result_default, result_explicit)
+
+
+def test_cv_sweep_multiple_seeds_adds_seed_column_and_varies_results():
+    df = make_low_rank_df(n_samples=60, n_features=10, rank=3, noise=0.15, seed=1)
+    result = nmf_rank_cv_sweep(
+        df, ranks=range(2, 5), n_replicates=2, n_seeds=3, random_state=0
+    )
+
+    assert set(result.columns) == {"seed", "rank", "rep", "train_mse", "test_mse"}
+    assert set(result["seed"]) == {0, 1, 2}
+    assert len(result) == 3 * 2 * 3  # ranks x reps x seeds
+
+    # Different top-level seeds should draw different masks/inits, so
+    # results shouldn't be identical across seeds.
+    by_seed = result.pivot_table(index=["rank", "rep"], columns="seed", values="test_mse")
+    assert not by_seed[0].equals(by_seed[1])
+
+
+def test_plot_nmf_rank_cv_handles_multiple_seeds():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_rank_cv
+
+    df = make_low_rank_df()
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 4), n_replicates=2, n_seeds=2, random_state=0)
+
+    ax = plot_nmf_rank_cv(result)
+    assert ax is not None
+    assert len(ax.lines) > 0
+
+
 def test_cv_sweep_records_nan_instead_of_raising(monkeypatch):
     real_masked_nmf = facedyn_nmf._masked_nmf
 
@@ -289,3 +341,71 @@ def test_plot_nmf_basis_heatmap_accepts_custom_labels():
     custom_labels = [f"custom_{i}" for i in range(4)]
     ax = plot_nmf_basis_heatmap(decomposer, labels=custom_labels)
     assert [t.get_text() for t in ax.get_yticklabels()] == custom_labels
+
+
+def make_blocky_df(
+    n_per_block: int = 30, n_blocks: int = 3, n_features: int = 9,
+    noise: float = 0.01, seed: int = 0,
+) -> pd.DataFrame:
+    """Synthetic data with `n_blocks` well-separated, non-overlapping row
+    groups, each dominated by its own distinct slice of features. Unlike
+    `make_low_rank_df` (continuous, overlapping activations across all
+    components), this is built so NMF's row-cluster assignment at
+    `n_blocks` components should be highly reproducible across random
+    restarts -- the property `nmf_cophenetic_correlation` is meant to
+    detect."""
+    rng = np.random.default_rng(seed)
+    n_samples = n_per_block * n_blocks
+    feats_per_block = n_features // n_blocks
+    data = np.zeros((n_samples, n_features))
+    for b in range(n_blocks):
+        rows = slice(b * n_per_block, (b + 1) * n_per_block)
+        feats = slice(b * feats_per_block, (b + 1) * feats_per_block)
+        data[rows, feats] = rng.uniform(0.5, 1.0, size=(n_per_block, feats_per_block))
+    data = np.clip(data + rng.normal(0, noise, size=data.shape), 0, None)
+
+    df = pd.DataFrame(data, columns=[f"smth_AU{i:02d}_r" for i in range(n_features)])
+    df.insert(0, "video_filename", [f"vid_{i}" for i in range(n_samples)])
+    df.insert(1, "frame", list(range(n_samples)))
+    return df
+
+
+def test_cophenetic_correlation_returns_one_row_per_rank():
+    df = make_low_rank_df(n_samples=60, n_features=8, rank=3, seed=0)
+    result = nmf_cophenetic_correlation(df, ranks=range(2, 5), n_runs=3, random_state=0)
+
+    assert list(result["rank"]) == [2, 3, 4]
+    assert result["cophenetic_correlation"].between(-1.0, 1.0).all()
+
+
+def test_cophenetic_correlation_deterministic_with_same_seed():
+    df = make_low_rank_df(n_samples=60, n_features=8, rank=3, seed=0)
+    result_a = nmf_cophenetic_correlation(df, ranks=range(2, 4), n_runs=3, random_state=5)
+    result_b = nmf_cophenetic_correlation(df, ranks=range(2, 4), n_runs=3, random_state=5)
+
+    pd.testing.assert_frame_equal(result_a, result_b)
+
+
+def test_cophenetic_correlation_high_at_true_block_count_lower_when_overspecified():
+    df = make_blocky_df(n_per_block=30, n_blocks=3, n_features=9, noise=0.01, seed=2)
+    result = nmf_cophenetic_correlation(df, ranks=[3, 9], n_runs=8, random_state=0)
+    by_rank = dict(zip(result["rank"], result["cophenetic_correlation"]))
+
+    # At the true number of well-separated blocks, row-cluster assignment
+    # should be highly stable across random restarts.
+    assert by_rank[3] > 0.9
+    # Overspecifying the rank should make assignments less stable, not more.
+    assert by_rank[9] < by_rank[3]
+
+
+def test_plot_nmf_cophenetic_correlation_runs_and_returns_axes():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_cophenetic_correlation
+
+    df = make_low_rank_df(n_samples=60, n_features=8, rank=3, seed=0)
+    result = nmf_cophenetic_correlation(df, ranks=range(2, 5), n_runs=3, random_state=0)
+
+    ax = plot_nmf_cophenetic_correlation(result)
+    assert ax is not None
+    assert len(ax.lines) > 0
