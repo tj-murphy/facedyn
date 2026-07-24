@@ -7,9 +7,12 @@ import facedyn.nmf as facedyn_nmf
 from facedyn.nmf import (
     NMFDecomposer,
     _masked_nmf,
+    _reconstruction_metrics,
     nmf_cophenetic_correlation,
     nmf_rank_cv_sweep,
     nmf_rank_mse_sweep,
+    nmf_reconstruction_error,
+    nmf_reconstruction_r2_per_au,
 )
 
 # The paper's actual max_iter/tol settings (kept as this module's defaults
@@ -422,3 +425,141 @@ def test_plot_nmf_cophenetic_correlation_runs_and_returns_axes():
     ax = plot_nmf_cophenetic_correlation(result)
     assert ax is not None
     assert len(ax.lines) > 0
+
+
+def test_reconstruction_metrics_perfect_reconstruction_gives_r2_one():
+    original = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    metrics = _reconstruction_metrics(original, original.copy())
+
+    assert metrics["RMSE"] == pytest.approx(0.0)
+    assert metrics["MAE"] == pytest.approx(0.0)
+    assert metrics["R2"] == pytest.approx(1.0)
+
+
+def test_reconstruction_metrics_mean_only_prediction_gives_r2_zero():
+    original = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+    reconstructed = np.full_like(original, original.mean())
+
+    metrics = _reconstruction_metrics(original, reconstructed)
+
+    assert metrics["R2"] == pytest.approx(0.0)
+
+
+def test_reconstruction_metrics_r2_uses_whole_matrix_mean_not_per_column():
+    # Matches final_analysis.Rmd's R `mean()` on a matrix -- a single
+    # scalar over every cell, not a per-column baseline (unlike, e.g.,
+    # sklearn.metrics.r2_score's default multioutput behavior). Using a
+    # column with zero within-column variance (col 0) makes the two
+    # baselines diverge sharply: a per-column formula would divide by zero
+    # for that column, while the whole-matrix formula stays well-defined.
+    original = np.array([[5.0, 0.0], [5.0, 10.0], [5.0, 20.0], [5.0, 30.0]])
+    reconstructed = original - 1.0
+
+    metrics = _reconstruction_metrics(original, reconstructed)
+
+    ss_tot = np.sum((original - original.mean()) ** 2)
+    ss_res = np.sum((original - reconstructed) ** 2)
+    assert metrics["R2"] == pytest.approx(1 - ss_res / ss_tot)
+
+
+def test_nmf_reconstruction_error_recovers_high_r2_on_low_rank_data():
+    df = make_low_rank_df(n_samples=300, n_features=8, rank=3, noise=0.01, seed=0)
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
+
+    result = nmf_reconstruction_error(decomposer, df)
+
+    assert list(result["metric"]) == ["RMSE", "NRMSE", "MAE", "R2"]
+    r2 = result.loc[result["metric"] == "R2", "value"].item()
+    # Low-noise, exactly-rank-3 data with a rank-3 model should reconstruct
+    # almost perfectly -- unlike the real (noisy, higher-rank-than-3) AU
+    # data this mirrors, where R2 is genuinely low (~0.42).
+    assert r2 > 0.95
+
+
+def test_nmf_reconstruction_error_generalizes_to_held_out_rows():
+    df = make_low_rank_df(n_samples=300, n_features=8, rank=3, noise=0.01, seed=0)
+    train, test = df.iloc[:200], df.iloc[200:]
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(train)
+
+    train_result = nmf_reconstruction_error(decomposer, train)
+    test_result = nmf_reconstruction_error(decomposer, test)
+
+    for result in (train_result, test_result):
+        r2 = result.loc[result["metric"] == "R2", "value"].item()
+        assert r2 > 0.9
+
+
+def test_nmf_reconstruction_r2_per_au_sorted_descending_with_labels():
+    df = make_low_rank_df(n_samples=200, n_features=6, rank=2, noise=0.01, seed=1)
+    decomposer = NMFDecomposer(n_components=2, random_state=0).fit(df)
+
+    result = nmf_reconstruction_r2_per_au(decomposer, df)
+    assert list(result.columns) == ["au", "r2"]
+    assert list(result["r2"]) == sorted(result["r2"], reverse=True)
+    assert set(result["au"]) == set(decomposer.columns_)
+
+    labels = [f"label_{i}" for i in range(6)]
+    labelled = nmf_reconstruction_r2_per_au(decomposer, df, labels=labels)
+    assert set(labelled["au"]) == set(labels)
+
+
+def test_plot_nmf_reconstruction_runs_and_returns_axes(tmp_path):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_reconstruction
+
+    df = make_low_rank_df(n_samples=100, n_features=5, rank=2, seed=0)
+    decomposer = NMFDecomposer(n_components=2, random_state=0).fit(df)
+
+    ax = plot_nmf_reconstruction(
+        decomposer, df, save_path="recon.png", output_dir=str(tmp_path)
+    )
+    assert ax is not None
+    assert len(ax.lines) == 2  # original + reconstructed
+    assert (tmp_path / "recon.png").exists()
+
+
+def test_plot_nmf_reconstruction_defaults_to_first_au_and_video():
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_reconstruction
+
+    df = make_low_rank_df(n_samples=100, n_features=5, rank=2, seed=0)
+    decomposer = NMFDecomposer(n_components=2, random_state=0).fit(df)
+
+    ax = plot_nmf_reconstruction(decomposer, df)
+    assert decomposer.columns_[0] in ax.get_ylabel()
+    assert df["video_filename"].iloc[0] in ax.get_title()
+
+
+def test_plot_nmf_reconstruction_extremes_runs_and_returns_two_axes(tmp_path):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_reconstruction_extremes
+
+    df = make_low_rank_df(n_samples=150, n_features=8, rank=3, seed=0)
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
+
+    axes = plot_nmf_reconstruction_extremes(
+        decomposer, df, save_path="extremes.pdf", output_dir=str(tmp_path)
+    )
+    assert len(axes) == 2
+    assert axes[0].get_title().startswith("Best:")
+    assert axes[1].get_title().startswith("Worst:")
+    assert (tmp_path / "extremes.pdf").exists()
+
+
+def test_plot_nmf_reconstruction_r2_bar_runs_and_returns_axes(tmp_path):
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_reconstruction_r2_bar
+
+    df = make_low_rank_df(n_samples=150, n_features=6, rank=3, seed=0)
+    decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
+    r2_table = nmf_reconstruction_r2_per_au(decomposer, df)
+
+    ax = plot_nmf_reconstruction_r2_bar(
+        r2_table, save_path="r2_bar.png", output_dir=str(tmp_path)
+    )
+    assert len(ax.patches) == 6
+    assert (tmp_path / "r2_bar.png").exists()

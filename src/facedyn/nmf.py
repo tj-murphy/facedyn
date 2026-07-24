@@ -836,3 +836,374 @@ def plot_nmf_basis_heatmap(
     ax.set_title("Basis Matrix (W)" + (" - Normalised" if normalize else ""))
     save_figure(ax.figure, save_path, output_dir, dpi)
     return ax
+
+
+def _reconstruction_metrics(original: np.ndarray, reconstructed: np.ndarray) -> dict[str, float]:
+    """RMSE/NRMSE/MAE/R² of `reconstructed` vs. `original`, matching
+    `final_analysis.Rmd`'s reconstruction-validation formulas exactly
+    (~L695-711): NRMSE divides by the original data's own range, and R² is
+    ``1 - sum(error**2) / sum((original - mean(original))**2)`` using
+    ``original``'s single *scalar* mean over the whole matrix -- R's
+    ``mean()`` on a matrix, not a per-column mean -- so this is not simply
+    `sklearn.metrics.r2_score` (which defaults to per-column baselines for
+    2D input).
+    """
+    error = original - reconstructed
+    rmse = np.sqrt(np.mean(error**2))
+    return {
+        "RMSE": rmse,
+        "NRMSE": rmse / (original.max() - original.min()),
+        "MAE": np.mean(np.abs(error)),
+        "R2": 1 - np.sum(error**2) / np.sum((original - original.mean()) ** 2),
+    }
+
+
+def _reconstruct(decomposer: NMFDecomposer, X: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """`(original, reconstructed)` arrays for `X` under a fitted `decomposer`.
+
+    Shared by :func:`nmf_reconstruction_error` and
+    :func:`nmf_reconstruction_r2_per_au`. Projects `X` onto the decomposer's
+    *fixed* basis via ``decomposer.transform`` (sklearn's non-negative
+    least-squares-equivalent solve for activations given frozen
+    ``components_``) and reconstructs via ``activations @ components_``.
+    This one code path covers both in-sample data (training reconstruction
+    quality) and out-of-sample data (held-out generalisation) -- unlike
+    `final_analysis.Rmd`, which hand-rolls a separate per-frame NNLS
+    projection loop (~L1128-1198) for the latter since base R has no
+    fixed-basis projection primitive; sklearn's `NMF.transform` already
+    solves exactly that problem.
+    """
+    check_is_fitted(decomposer, "components_")
+    original = X[decomposer.columns_].to_numpy()
+    activation_cols = [f"{decomposer.prefix}{i + 1}" for i in range(decomposer.n_components)]
+    activations = decomposer.transform(X)[activation_cols].to_numpy()
+    reconstructed = activations @ decomposer.components_
+    return original, reconstructed
+
+
+def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate reconstruction-quality metrics for a fitted decomposer.
+
+    Replicates `final_analysis.Rmd`'s reconstruction-validation section
+    (~L695-711): reconstructs `X` from its NMF activations and reports how
+    much of the original AU signal survives the compression down to
+    ``decomposer.n_components`` components. R² here is exactly "proportion
+    of AU signal variance retained by NMF" -- the quantity the original
+    analysis found surprisingly low (~0.42 in-sample), motivating the
+    later move to representative-AU selection instead of NMF activations
+    for downstream feature extraction.
+
+    Works on *any* `X` containing ``decomposer.columns_``: pass the
+    training data for in-sample fit quality, or held-out data (a test
+    split, or any other video set) for out-of-sample generalisation --
+    R's separate "test set" and "40 held-out videos" sections are both
+    just this same call with different data, not separate code paths.
+
+    Parameters
+    ----------
+    decomposer : NMFDecomposer
+        A fitted decomposer (i.e. ``fit`` already called).
+    X : pd.DataFrame
+        Data containing ``decomposer.columns_`` (plus any other columns,
+        which are ignored).
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``metric`` and ``value``, one row each for ``"RMSE"``,
+        ``"NRMSE"``, ``"MAE"``, ``"R2"`` -- matching
+        `final_analysis.Rmd`'s ``dta_nmf_recon_err`` table shape.
+    """
+    original, reconstructed = _reconstruct(decomposer, X)
+    metrics = _reconstruction_metrics(original, reconstructed)
+    return pd.DataFrame(
+        {"metric": list(metrics.keys()), "value": list(metrics.values())}
+    )
+
+
+def nmf_reconstruction_r2_per_au(
+    decomposer: NMFDecomposer, X: pd.DataFrame, labels: list[str] | None = None
+) -> pd.DataFrame:
+    """Per-AU reconstruction R² for a fitted decomposer.
+
+    Replicates `final_analysis.Rmd`'s per-AU breakdown (~L4225-4260,
+    ``r2_vec``/``dta_r2``): the same R² formula as
+    :func:`nmf_reconstruction_error`, computed independently per AU column
+    rather than aggregated over the whole matrix -- shows *which* AUs the
+    NMF compression preserves well vs. poorly (the original analysis found
+    AU07 best, ~0.887-0.899, and AU23 worst, ~0.010-0.011).
+
+    Parameters
+    ----------
+    decomposer : NMFDecomposer
+        A fitted decomposer (i.e. ``fit`` already called).
+    X : pd.DataFrame
+        Data containing ``decomposer.columns_`` (plus any other columns,
+        which are ignored).
+    labels : list of str, optional
+        Row labels, one per factorized column, in the same order as
+        ``decomposer.columns_``. Defaults to ``decomposer.columns_``
+        itself; pass ``facedyn.humanise_au_labels(decomposer.columns_)``
+        for readable AU names instead of raw column names.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``au`` and ``r2``, one row per factorized column, sorted
+        descending by ``r2`` -- matching
+        `final_analysis.Rmd`'s ``dplyr::arrange(desc(...))``.
+    """
+    original, reconstructed = _reconstruct(decomposer, X)
+    error = original - reconstructed
+    col_mean = original.mean(axis=0)
+    r2 = 1 - np.sum(error**2, axis=0) / np.sum((original - col_mean) ** 2, axis=0)
+    au_labels = labels if labels is not None else decomposer.columns_
+    return (
+        pd.DataFrame({"au": au_labels, "r2": r2})
+        .sort_values("r2", ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def plot_nmf_reconstruction(
+    decomposer: NMFDecomposer,
+    X: pd.DataFrame,
+    au: str | None = None,
+    video_id=None,
+    group_col: str = "video_filename",
+    frame_col: str = "frame",
+    ax=None,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
+):
+    """Plot original vs. reconstructed AU activation over time, for one AU
+    and one video.
+
+    Replicates `final_analysis.Rmd`'s "Visualisation of Reconstruction
+    Quality" plot (~L738-780): a quick visual sanity check of what the R²
+    numbers from :func:`nmf_reconstruction_error` mean in practice for a
+    single signal.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    Parameters
+    ----------
+    decomposer : NMFDecomposer
+        A fitted decomposer (i.e. ``fit`` already called).
+    X : pd.DataFrame
+        Data containing ``decomposer.columns_``, ``group_col`` and
+        ``frame_col``.
+    au : str, optional
+        Which factorized column to plot. Defaults to
+        ``decomposer.columns_[0]``. (`final_analysis.Rmd` hardcoded AU07
+        for this plot with no stated reason -- any factorized AU can be
+        requested here instead.)
+    video_id : optional
+        Value of ``group_col`` identifying which video's rows to plot.
+        Defaults to the first unique value in ``group_col``.
+    group_col : str, default "video_filename"
+        Column identifying which rows belong to which video.
+    frame_col : str, default "frame"
+        Column used for the x-axis.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. A new figure/axes is created if not given.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename -- format is inferred
+        from the extension. Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_nmf_reconstruction requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    if au is None:
+        au = decomposer.columns_[0]
+    if video_id is None:
+        video_id = X[group_col].iloc[0]
+
+    original, reconstructed = _reconstruct(decomposer, X)
+    au_idx = decomposer.columns_.index(au)
+    rows = (X[group_col] == video_id).to_numpy()
+    frames = X.loc[rows, frame_col]
+    order = np.argsort(frames.to_numpy())
+
+    if ax is None:
+        _, ax = plt.subplots()
+
+    ax.plot(
+        frames.to_numpy()[order], original[rows, au_idx][order],
+        color="#009E73", alpha=0.6, linewidth=1, label="Original",
+    )
+    ax.plot(
+        frames.to_numpy()[order], reconstructed[rows, au_idx][order],
+        color="#D55E00", linewidth=1.5, label="Reconstructed",
+    )
+    ax.set_xlabel(frame_col)
+    ax.set_ylabel(au)
+    ax.set_title(f"{au} - Original vs. Reconstructed ({video_id})")
+    ax.legend()
+    save_figure(ax.figure, save_path, output_dir, dpi)
+    return ax
+
+
+def plot_nmf_reconstruction_extremes(
+    decomposer: NMFDecomposer,
+    X: pd.DataFrame,
+    video_id=None,
+    group_col: str = "video_filename",
+    frame_col: str = "frame",
+    r2_table: pd.DataFrame | None = None,
+    ax=None,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
+):
+    """Plot original vs. reconstructed activation for the best- and
+    worst-reconstructed AUs, side by side, for one video.
+
+    Replicates `final_analysis.Rmd`'s "Reconstruction Pt2" plot
+    (~L4262-4310): identifies the highest- and lowest-R² AUs (via
+    :func:`nmf_reconstruction_r2_per_au`) and plots each as
+    :func:`plot_nmf_reconstruction` would, so the best- and worst-case
+    reconstructions can be compared directly.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    Parameters
+    ----------
+    decomposer : NMFDecomposer
+        A fitted decomposer (i.e. ``fit`` already called).
+    X : pd.DataFrame
+        Data containing ``decomposer.columns_``, ``group_col`` and
+        ``frame_col``.
+    video_id : optional
+        Value of ``group_col`` identifying which video's rows to plot.
+        Defaults to the first unique value in ``group_col``.
+    group_col : str, default "video_filename"
+        Column identifying which rows belong to which video.
+    frame_col : str, default "frame"
+        Column used for the x-axis.
+    r2_table : pd.DataFrame, optional
+        Output of :func:`nmf_reconstruction_r2_per_au` for `decomposer`/`X`,
+        to reuse instead of recomputing it here.
+    ax : sequence of matplotlib.axes.Axes, optional
+        Two Axes (best, worst) to draw on. A new ``1 x 2`` grid is created
+        if not given.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename -- format is inferred
+        from the extension. Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
+
+    Returns
+    -------
+    list of matplotlib.axes.Axes
+        ``[best_ax, worst_ax]``.
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_nmf_reconstruction_extremes requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    if r2_table is None:
+        r2_table = nmf_reconstruction_r2_per_au(decomposer, X)
+    best_au = r2_table.loc[r2_table["r2"].idxmax(), "au"]
+    worst_au = r2_table.loc[r2_table["r2"].idxmin(), "au"]
+
+    if video_id is None:
+        video_id = X[group_col].iloc[0]
+
+    if ax is None:
+        _, axes = plt.subplots(1, 2, figsize=(9, 4))
+    else:
+        axes = np.atleast_1d(ax)
+        if len(axes) != 2:
+            raise ValueError(f"ax must have 2 entries, got {len(axes)}.")
+
+    for target_ax, au, role in zip(axes, [best_au, worst_au], ["Best", "Worst"]):
+        plot_nmf_reconstruction(
+            decomposer, X, au=au, video_id=video_id,
+            group_col=group_col, frame_col=frame_col, ax=target_ax,
+        )
+        target_ax.set_title(f"{role}: {target_ax.get_title()}")
+
+    save_figure(axes[0].figure, save_path, output_dir, dpi)
+    return list(axes)
+
+
+def plot_nmf_reconstruction_r2_bar(
+    r2_table: pd.DataFrame,
+    ax=None,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
+):
+    """Bar chart of per-AU reconstruction R² (:func:`nmf_reconstruction_r2_per_au`'s output).
+
+    Not part of `final_analysis.Rmd` (it only tabulates ``dta_r2``, never
+    plots it) -- added since a sorted bar chart is the most direct single
+    view of which AUs the NMF compression retains vs. loses, the exact
+    question the original analysis's reconstruction check was trying to
+    answer.
+
+    Requires matplotlib (``pip install facedyn[viz]``).
+
+    Parameters
+    ----------
+    r2_table : pd.DataFrame
+        Output of :func:`nmf_reconstruction_r2_per_au`.
+    ax : matplotlib.axes.Axes, optional
+        Axes to draw on. A new figure/axes is created if not given.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename -- format is inferred
+        from the extension. Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
+
+    Returns
+    -------
+    matplotlib.axes.Axes
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError as e:
+        raise ImportError(
+            "plot_nmf_reconstruction_r2_bar requires matplotlib. Install with: "
+            "pip install facedyn[viz]"
+        ) from e
+
+    r2_table = r2_table.sort_values("r2", ascending=True)
+
+    if ax is None:
+        _, ax = plt.subplots(figsize=(6, 0.35 * len(r2_table) + 1.5))
+
+    ax.barh(r2_table["au"], r2_table["r2"], color="#0072B2")
+    ax.set_xlabel("R² (reconstruction)")
+    ax.set_title("Per-AU reconstruction R² - signal retained by NMF")
+    save_figure(ax.figure, save_path, output_dir, dpi)
+    return ax
