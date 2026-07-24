@@ -52,6 +52,34 @@ def test_reshape_for_cmfts_pivots_long_to_wide():
     np.testing.assert_array_equal(row[frame_cols].to_numpy(), np.arange(n, dtype=float))
 
 
+def test_reshape_for_cmfts_drops_frame_varying_columns_not_fragments_pivot():
+    """Regression test for a real bug: RepresentativeAUSelector.transform's
+    output (this function's intended input) carries through *every*
+    non-factorized column, including ones that vary per-frame (raw AU
+    intensities, timestamp, confidence, ...), not just genuine per-video
+    metadata. Auto-including a frame-varying column in `id_vars` used to
+    silently fragment the pivot into one row per (video, frame, series)
+    instead of (video, series) -- confirmed to actually happen against
+    real data (200x too many rows, ~99.6% NaN) before this was fixed."""
+    n = 20
+    df = pd.DataFrame({
+        "video_filename": ["v1"] * n,
+        "isfakeorreal": ["real"] * n,  # constant per video -> safe, should be kept
+        "timestamp": np.arange(n, dtype=float),  # varies per frame -> must be dropped
+        "frame": list(range(1, n + 1)),
+        "smth_AU01_r": np.arange(n, dtype=float),
+    })
+
+    with pytest.warns(UserWarning, match="timestamp"):
+        wide = reshape_for_cmfts(df, value_cols=["smth_AU01_r"])
+
+    assert wide.shape[0] == 1  # one video x one series, not one row per frame
+    assert "isfakeorreal" in wide.columns
+    assert "timestamp" not in wide.columns
+    frame_cols = [f"fr_{i}" for i in range(1, n + 1)]
+    assert wide[frame_cols].notna().all(axis=None)  # no fragmented-NaN rows
+
+
 def test_reshape_for_cmfts_keeps_extra_metadata_columns_by_default():
     df = pd.DataFrame({
         "video_filename": ["v1", "v1"],
