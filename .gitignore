@@ -28,6 +28,7 @@ env/
 
 # Notebooks
 .ipynb_checkpoints/
+notebooks/
 
 # Large / superseded data — see PIPELINE.md validation protocol:
 # small fixtures in tests/validation/fixtures/ replace these for testing.

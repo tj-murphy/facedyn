@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
+
+from facedyn._plot_utils import save_figure
 
 
 class RollingSmoother(BaseEstimator, TransformerMixin):
@@ -87,6 +90,9 @@ def plot_smoothing_comparison(
     frame_col: str = "frame",
     mode: str = "stacked",
     ax=None,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
 ):
     """Plot a raw AU column against its smoothed counterpart for one video.
 
@@ -122,6 +128,16 @@ def plot_smoothing_comparison(
     ax : matplotlib.axes.Axes, optional
         Axes to draw on when ``mode="overlay"``. A new figure/axes is
         created if not given.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename (e.g.
+        ``"smoothing.pdf"`` or ``"smoothing.png"``) -- format is inferred
+        from the extension. Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
 
     Returns
     -------
@@ -161,6 +177,7 @@ def plot_smoothing_comparison(
         ax.set_ylabel(column)
         ax.set_title(f"{column} - Raw vs. Smoothed ({video_filename})")
         ax.legend()
+        save_figure(ax.figure, save_path, output_dir, dpi)
         return ax
 
     _, (raw_ax, smoothed_ax) = plt.subplots(2, 1, sharex=True, sharey=True)
@@ -176,4 +193,5 @@ def plot_smoothing_comparison(
     smoothed_ax.set_ylabel(column)
     smoothed_ax.set_title("Smoothed")
 
+    save_figure(raw_ax.figure, save_path, output_dir, dpi)
     return [raw_ax, smoothed_ax]

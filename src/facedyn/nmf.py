@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,8 @@ from scipy.spatial.distance import squareform
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.decomposition import NMF
 from sklearn.utils.validation import check_is_fitted
+
+from facedyn._plot_utils import save_figure
 
 
 def _resolve_columns(
@@ -291,7 +294,13 @@ def nmf_rank_cv_sweep(
 
 
 def plot_nmf_rank_cv(
-    result: pd.DataFrame, ax=None, robust: bool = True, outlier_z: float = 3.5
+    result: pd.DataFrame,
+    ax=None,
+    robust: bool = True,
+    outlier_z: float = 3.5,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
 ):
     """Plot :func:`nmf_rank_cv_sweep` output: per-fold train/test MSE vs. rank.
 
@@ -335,6 +344,16 @@ def plot_nmf_rank_cv(
         Robust z-score (based on median absolute deviation across all
         train/test MSE values) beyond which a point is treated as an
         outlier for axis-scaling purposes. Only used when ``robust=True``.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename (e.g. ``"rank_cv.pdf"``
+        or ``"rank_cv.png"``) -- format is inferred from the extension.
+        Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
 
     Returns
     -------
@@ -414,6 +433,7 @@ def plot_nmf_rank_cv(
         title += "\n(▲ = off-scale point, true value annotated)"
     ax.set_title(title)
     ax.legend()
+    save_figure(ax.figure, save_path, output_dir, dpi)
     return ax
 
 
@@ -553,7 +573,13 @@ def nmf_cophenetic_correlation(
     return pd.DataFrame.from_records(records)
 
 
-def plot_nmf_cophenetic_correlation(result: pd.DataFrame, ax=None):
+def plot_nmf_cophenetic_correlation(
+    result: pd.DataFrame,
+    ax=None,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
+):
     """Plot :func:`nmf_cophenetic_correlation` output: cophenetic
     correlation vs. rank.
 
@@ -572,6 +598,16 @@ def plot_nmf_cophenetic_correlation(result: pd.DataFrame, ax=None):
         Output of :func:`nmf_cophenetic_correlation`.
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename (e.g.
+        ``"cophenetic.pdf"`` or ``"cophenetic.png"``) -- format is inferred
+        from the extension. Not saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
 
     Returns
     -------
@@ -597,6 +633,7 @@ def plot_nmf_cophenetic_correlation(result: pd.DataFrame, ax=None):
     ax.set_ylabel("Cophenetic correlation")
     ax.set_ylim(0, 1.05)
     ax.set_title("NMF clustering stability vs. rank")
+    save_figure(ax.figure, save_path, output_dir, dpi)
     return ax
 
 
@@ -710,6 +747,9 @@ def plot_nmf_basis_heatmap(
     labels: list[str] | None = None,
     ax=None,
     cmap: str = "Blues",
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
 ):
     """Plot a fitted :class:`NMFDecomposer`'s basis matrix as a heatmap.
 
@@ -749,6 +789,16 @@ def plot_nmf_basis_heatmap(
     cmap : str, default "Blues"
         Matplotlib colormap name. The default is a sequential blue scale,
         matching the R figure's ``colorRampPalette(brewer.pal(6, "Blues"))``.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename (e.g. ``"basis.pdf"`` or
+        ``"basis.png"``) -- format is inferred from the extension. Not
+        saved if left as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Ignored if ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG); ignored
+        for vector formats (e.g. PDF) and if ``save_path`` is None.
 
     Returns
     -------
@@ -784,4 +834,5 @@ def plot_nmf_basis_heatmap(
     ax.figure.colorbar(im, ax=ax, label=cbar_label)
 
     ax.set_title("Basis Matrix (W)" + (" - Normalised" if normalize else ""))
+    save_figure(ax.figure, save_path, output_dir, dpi)
     return ax

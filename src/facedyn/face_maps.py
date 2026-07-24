@@ -71,10 +71,12 @@ import base64
 import gzip
 import io
 import warnings
+from pathlib import Path
 
 import numpy as np
 from sklearn.utils.validation import check_is_fitted
 
+from facedyn._plot_utils import save_figure
 from facedyn.au_labels import extract_au_code
 from facedyn.nmf import NMFDecomposer, max_normalize_columns
 
@@ -480,6 +482,9 @@ def plot_nmf_face_maps(
     cmap: str = "Blues",
     alpha: float = 1.0,
     warn_unmapped: bool = True,
+    save_path: str | Path | None = None,
+    output_dir: str | Path = ".",
+    dpi: int = 300,
 ):
     """Plot a schematic face map per NMF component, deformed and shaded by
     AU loading.
@@ -540,6 +545,21 @@ def plot_nmf_face_maps(
         facial *region* in this face-map style (their loading still
         affects face *shape* via the deformation model, just isn't given
         its own shaded region), rather than silently dropping them.
+    save_path : str or pathlib.Path, optional
+        If given, save the figure to this filename (e.g. ``"face_maps.pdf"``
+        or ``"face_maps.png"``) -- the format is inferred from the
+        extension, so both a print-quality PDF and a raster PNG (see
+        ``dpi``) are supported, as well as any other format matplotlib's
+        ``savefig`` recognises. The figure is *not* saved if this is left
+        as ``None`` (the default).
+    output_dir : str or pathlib.Path, default "."
+        Directory ``save_path`` is written into (created if it doesn't
+        already exist). Defaults to the current directory. Ignored if
+        ``save_path`` is None.
+    dpi : int, default 300
+        Resolution used when saving to a raster format (e.g. PNG);
+        ignored for vector formats (e.g. PDF) and if ``save_path`` is
+        None.
 
     Returns
     -------
@@ -623,5 +643,7 @@ def plot_nmf_face_maps(
         component_ax.set_xticks([])
         component_ax.set_yticks([])
         component_ax.set_title(f"Component {component_idx + 1}")
+
+    save_figure(axes[0].figure, save_path, output_dir, dpi)
 
     return list(axes)
