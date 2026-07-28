@@ -1,16 +1,10 @@
-"""Train/test splitting for video-level (frame-level) AU data.
+"""Train/test splitting for frame-level AU data.
 
-Two splitters are provided:
-
-- :func:`group_train_test_split` — the general-purpose default. Makes no
-  assumption about study design beyond "a video's frames shouldn't be split
-  across train and test." Works for any condition-comparison (emotion
-  categories, unpaired real/fake, patient/control, ...).
-- :func:`paired_train_test_split` — a specialization for designs with
-  explicit matched pairs (e.g. this package's original real/fake deepfake
-  pairing), where a pair must land on the same side of the split together.
-  Only use this if your data actually has that structure; most users should
-  start with :func:`group_train_test_split`.
+- :func:`group_train_test_split` is the general-purpose default. It assumes
+  only that a video's frames should not be split across train and test.
+- :func:`paired_train_test_split` is for designs with explicit matched
+  pairs, such as real/fake deepfake pairing, where both members must land
+  on the same side. Use it only if your data has that structure.
 """
 
 from __future__ import annotations
@@ -30,10 +24,10 @@ def group_train_test_split(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Random train/test split that keeps each video's rows together.
 
-    No assumption is made about matched pairs or class balance — this is
-    the right default for most datasets. A thin wrapper around
-    :class:`sklearn.model_selection.GroupShuffleSplit`, grouping rows by
-    ``video_col`` so a single video's frames always stay on one side.
+    Assumes nothing about matched pairs or class balance, so it is the
+    right default for most datasets. Wraps
+    :class:`sklearn.model_selection.GroupShuffleSplit`, grouping by
+    `video_col`.
 
     Parameters
     ----------
@@ -69,24 +63,17 @@ def paired_train_test_split(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split video-level data into train/test sets without splitting pairs.
 
-    Only use this if your data has explicit matched pairs (e.g. each real
-    video has exactly one corresponding fake video that must land on the
-    same side of the split). If your data doesn't have that structure, use
-    :func:`group_train_test_split` instead.
+    Use only if your data has explicit matched pairs. Otherwise use
+    :func:`group_train_test_split`.
 
-    Replicates the R pipeline's split: a fraction of *real* videos is
-    sampled, and each selected real video's paired fake (identified via
-    ``pair_col``, which is symmetric — a real row's ``pair_col`` value is
-    its fake's ``video_col`` value, and vice versa) is carried into the same
-    split. This guarantees a real video and its one deepfake counterpart
-    always land on the same side of the split.
+    Samples a fraction of real videos and carries each one's paired fake
+    into the same split, so a pair never straddles the split. `pair_col` is
+    symmetric: a real row's value is its fake's `video_col` value, and vice
+    versa.
 
-    This step is stochastic: sampling uses NumPy's RNG, which is a
-    different algorithm from R's ``sample()``. Even with a numerically
-    "matched" seed, the exact videos selected will differ from the R
-    output — only the split proportions and the pairing invariant are
-    meant to replicate R (see PIPELINE.md's stochastic-step validation
-    policy).
+    Sampling uses NumPy's RNG, which differs from R's ``sample()``, so the
+    exact videos selected will not match R even with the same seed. Only
+    the proportions and the pairing invariant replicate.
 
     Parameters
     ----------

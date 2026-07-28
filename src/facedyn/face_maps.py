@@ -1,68 +1,24 @@
 """Face-map visualisation of NMF component AU loadings.
 
-Replicates the original R analysis's Figure 1B/C/D-style face maps
-("visualizing the facial AU groups" for each NMF component,
-`Murphy, Cook & Cuve, in prep`), which were originally produced with the
-`py-feat <https://py-feat.org>`_ library's ``plot_face(muscles={"all":
-"heatmap"})``.
+Draws a schematic face per NMF component, its shape deformed by that
+component's AU values and its muscle regions shaded by AU loading.
 
-This module is a self-contained, matplotlib-only reimplementation -- not a
-`py-feat` wrapper. Two reasons:
+A self-contained matplotlib-only reimplementation, not a `py-feat` wrapper.
+Adapted from `py-feat` v0.6.2 (MIT, github.com/cosanlab/py-feat), credit to
+its authors (Cheong, Xie, Byrne, Jolly & Chang). Two static artifacts are
+embedded below: the 68-point landmark template with its muscle polygons,
+and the fitted parameters of py-feat's ``pyfeat_aus_to_landmarks`` PLS
+regression mapping 20 AU values to deformed landmarks. See `PIPELINE.md`
+step 4 for why this is embedded rather than imported.
 
-1. `py-feat` (as of 2.0) pulls in a large ML dependency stack (``torch``,
-   ``torchvision``, ``timm``, ``xgboost``, ...) for its face-detection
-   models, none of which this plot needs, and its video-decoding submodule
-   (unconditionally imported by ``feat/__init__.py``) depends on an
-   exact-matching system FFmpeg build -- a fragile native dependency this
-   package's "easy to install" goal can't afford. Confirmed empirically:
-   `import feat` hard-crashes in this project's own dev environment over
-   exactly this.
-2. `py-feat`'s ``plot_face(muscles=...)`` turns out to only need two small,
-   *static* pieces from its trained model, not `py-feat` itself: (a) a PLS
-   regression that maps a 20-AU vector to 68 deformed face-landmark
-   points (this *does* meaningfully change the face's shape -- e.g. high
-   AU06/AU12 visibly produces a smiling mouth -- unlike an earlier version
-   of this module, which incorrectly assumed the shape was AU-invariant),
-   and (b) ~19 named facial-muscle-shaped regions, defined purely as index
-   references into that same 68-point landmark array, whose *fill color*
-   (on top of the deformed shape) depends on AU values. Both are small,
-   fixed, numeric artifacts -- extracted once from `py-feat`'s own
-   openly-hosted files and embedded below -- not a live dependency.
-
-Adapted from `py-feat` v0.6.2 (MIT licensed, github.com/cosanlab/py-feat)
--- credit to its authors (Cheong, Xie, Byrne, Jolly & Chang; py-feat is
-cited as reference 28 in the paper this module's output replicates):
-
-- The 68-point neutral landmark template and muscle-polygon geometry, from
-  ``feat/plotting.py``'s ``draw_lineface``/``draw_muscles``/``get_heat``.
-- The AU-to-landmark deformation model itself (``coef``, ``intercept``,
-  ``x_mean`` below) -- the fitted parameters of `py-feat`'s
-  ``pyfeat_aus_to_landmarks`` PLS regression, downloaded from its public
-  GitHub release asset (github.com/cosanlab/py-feat/releases/tag/v0.1) and
-  re-embedded here (float32, gzip+base64, ~15KB) as three small arrays --
-  not the original 20MB file, which also bundles training data this
-  module has no use for.
-
-**AU coverage caveat**: `py-feat`'s original design maps its own 20-AU
-model's codes onto muscle regions, some of which (AU11, AU24, AU28, AU43)
-have no OpenFace counterpart -- `facedyn`'s AU set (see
-:data:`facedyn.au_labels.AU_DESCRIPTIONS`). Two adaptations were made
-deliberately, not silently: `py-feat` itself defines an alternate
-OpenFace-appropriate mapping for the masseter/temporalis regions (its own
-``"_rel"`` muscle variants) mapped to AU26 instead of AU24 -- used here.
-And `py-feat`'s AU43 (its own code for eye closure) and OpenFace's AU45
-(``Blink``) denote the same physical action under each toolkit's own
-numbering, so the palpebral-orbicularis-oculi region is driven by AU45
-here. There is no such equivalent for AU11 (zygomaticus major has no
-OpenFace-trackable driver in this design) -- that region is left
-undriven (colored neutral). AU05 (upper lid raiser) and AU25 (lips part)
-have no dedicated *region* in this face-map style at all -- a limitation
-inherited from `py-feat`'s own original design -- but, unlike a region's
-color, face *shape* is driven by the full 20-AU deformation model
-directly, so AU05 in particular still visibly affects the eyes even
-without its own shaded region. :func:`plot_nmf_face_maps` warns once,
-listing exactly which AUs have no facial *region* (not "no effect at
-all"), rather than silently dropping them.
+Some AUs have no facial region in this style. `py-feat`'s masseter and
+temporalis regions use its OpenFace-appropriate ``"_rel"`` variants (AU26),
+and its AU43 and OpenFace's AU45 denote the same eye closure, so that
+region is driven by AU45. AU11 has no OpenFace-trackable driver and is left
+undriven. AU05 and AU25 have no dedicated region at all, though they still
+affect face shape through the deformation model.
+:func:`plot_nmf_face_maps` warns once listing these rather than dropping
+them silently.
 """
 
 from __future__ import annotations
@@ -451,10 +407,8 @@ def _muscle_polygons(x, y) -> dict[str, list[tuple[float, float]]]:
     }
 
 
-# Muscle region -> the OpenFace AU code that drives its shading. Adapted
-# from py-feat's get_heat -- see module docstring for the two deliberate
-# adaptations (masseter/temporalis -> AU26, orb_oc_*_inner -> AU45) and the
-# known gap (zyg_maj_* has no OpenFace-trackable driver, left unmapped).
+# Muscle region -> the OpenFace AU code that drives its shading. 
+# Adapted from py-feat's get_heat
 _MUSCLE_TO_AU: dict[str, str] = {
     "frontalis_inner_l": "AU01", "frontalis_inner_r": "AU01",
     "frontalis_l": "AU02", "frontalis_r": "AU02",
@@ -486,18 +440,13 @@ def plot_nmf_face_maps(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Plot a schematic face map per NMF component, deformed and shaded by
-    AU loading.
+    """Plot a schematic face map per NMF component.
 
-    Replicates the original analysis's Figure 1B/C/D face maps: a
-    line-drawn face, its shape deformed by the component's AU values
-    (e.g. high AU06/AU12 visibly produces a smiling mouth) via py-feat's
-    original PLS deformation model, with named muscle regions layered on
-    top and shaded by how strongly each region's associated AU loads onto
-    that component. See the module docstring for what this is adapted
-    from and its known AU-coverage limitations.
+    A line-drawn face, its shape deformed by the component's AU values, with
+    muscle regions shaded by how strongly each region's AU loads onto that
+    component. See the module docstring for AU-coverage limitations.
 
-    Requires matplotlib (``pip install facedyn[viz]``) -- nothing else.
+    Requires matplotlib (``pip install facedyn[viz]``).
 
     Parameters
     ----------
@@ -508,58 +457,34 @@ def plot_nmf_face_maps(
         One Axes per component, in order. A new ``1 x n_components`` grid
         is created if not given.
     normalize : bool, default True
-        If True (the default, matching :func:`facedyn.nmf.plot_nmf_basis_heatmap`),
-        each component's AU loadings are independently min-max scaled to
-        ``[0, 1]`` before use -- both for region shading *and* as the input
-        to the deformation model, which was itself trained on AU values in
-        that same ``[0, 1]`` range (see module docstring). This isn't just
-        cosmetic: it's what removes NMF's per-component scale ambiguity
-        (see :class:`NMFDecomposer`'s docstring) so different components'
-        face maps are comparable at all. Set to False to use
-        ``decomposer.components_`` unmodified -- values far outside
-        ``[0, 1]`` will likely push the deformation model outside the
-        range it was trained on, and will saturate every region to the
-        same color.
+        Min-max scale each component's AU loadings to ``[0, 1]``, for both
+        shading and the deformation model, which was trained on that range.
+        This removes NMF's per-component scale ambiguity, without which
+        components are not comparable. Set to False to use
+        ``decomposer.components_`` unmodified, but note that values outside
+        ``[0, 1]`` push the deformation model beyond its training range and
+        saturate every region to the same colour.
     cmap : str, default "Blues"
-        Matplotlib colormap name, applied to each region's AU value. To
-        match py-feat's own ``get_heat`` exactly, a region's color is looked
-        up at ``int(value * 100) / 150`` rather than at ``value`` directly
-        -- py-feat quantizes into a 151-level discrete palette and only
-        ever indexes the bottom 101 of those levels (``au`` is scaled to
-        ``[0, 100]``, then truncated to an int), so even a region at full
-        loading renders at ~67% of the colormap's range, not its darkest
-        end -- and this reproduces that quantization and ceiling faithfully
-        rather than using the colormap's full continuous range.
+        Matplotlib colormap name. Colours are looked up at
+        ``int(value * 100) / 150`` to match py-feat's quantised palette, so
+        a fully loaded region renders at about 67% of the colormap's range
+        rather than its darkest end.
     alpha : float, default 1.0
-        Multiplier on a shaded muscle region's opacity. A region's actual
-        opacity is ``value * alpha``, matching py-feat's own ``get_heat``
-        (whose opacity is exactly ``au_value / 100``, i.e. ``alpha=1.0``
-        here) -- a region with little to no loading fades toward fully
-        transparent rather than staying visible at a flat shade. Set below
-        1.0 to additionally dim every region uniformly (e.g. if regions
-        overlapping substantially in this design make a fully-opaque
-        region's edge, drawn on top, hide too much of an earlier region
-        underneath it).
+        Multiplier on region opacity, which is ``value * alpha``. At the
+        default this matches py-feat, where a barely-loaded region fades
+        toward transparent. Set below 1.0 to dim every region uniformly,
+        which helps where overlapping regions hide each other.
     warn_unmapped : bool, default True
-        Warn once, listing any of ``decomposer``'s AU columns that have no
-        facial *region* in this face-map style (their loading still
-        affects face *shape* via the deformation model, just isn't given
-        its own shaded region), rather than silently dropping them.
+        Warn once listing AU columns with no facial region in this style.
+        Their loading still affects face shape through the deformation
+        model.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename (e.g. ``"face_maps.pdf"``
-        or ``"face_maps.png"``) -- the format is inferred from the
-        extension, so both a print-quality PDF and a raster PNG (see
-        ``dpi``) are supported, as well as any other format matplotlib's
-        ``savefig`` recognises. The figure is *not* saved if this is left
-        as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Defaults to the current directory. Ignored if
-        ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG);
-        ignored for vector formats (e.g. PDF) and if ``save_path`` is
-        None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------

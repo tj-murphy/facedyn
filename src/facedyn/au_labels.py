@@ -34,14 +34,11 @@ _AU_CODE_PATTERN = re.compile(r"AU\d{2}", re.IGNORECASE)
 def extract_au_code(column: str) -> str | None:
     """Extract the ``AU##`` code from a column name, or ``None`` if absent.
 
-    Shared by :func:`humanise_au_label` and
-    :func:`facedyn.face_maps.plot_nmf_face_maps`, both of which need to
-    identify which AU a column refers to regardless of surrounding naming
-    convention (``AU01_r``, ``smth_AU01_r``, ``AU01_inner_brow_raiser``, ...).
-    Unlike :func:`humanise_au_label`, this doesn't check the code against
-    :data:`AU_DESCRIPTIONS` -- it returns any ``AU##``-shaped code found,
-    known or not, since callers may want to detect and report unrecognized
-    codes themselves rather than have them silently swallowed.
+    Works regardless of naming convention, such as ``AU01_r``,
+    ``smth_AU01_r`` or ``AU01_inner_brow_raiser``. Unlike
+    :func:`humanise_au_label`, the code is not checked against
+    :data:`AU_DESCRIPTIONS`, so unrecognised codes are returned rather than
+    swallowed.
 
     Examples
     --------
@@ -54,15 +51,12 @@ def extract_au_code(column: str) -> str | None:
 
 
 def humanise_au_label(column: str) -> str:
-    """Convert an AU column name to a human-readable ``"AU## - Description"`` label.
+    """Convert an AU column name to a ``"AU## - Description"`` label.
 
-    Looks for an ``AU##`` code anywhere in the name, so it works regardless
-    of surrounding convention: OpenFace's raw (``AU01_r``), `facedyn`'s
-    smoothed (``smth_AU01_r``), or the original R analysis's already
-    human-readable (``AU01_inner_brow_raiser``) columns all normalize to the
-    same label. Names with no recognisable AU code, or an AU code outside
-    OpenFace's 17-column intensity set (see :data:`AU_DESCRIPTIONS`), are
-    returned unchanged rather than raising.
+    Finds an ``AU##`` code anywhere in the name, so raw, smoothed and
+    already-readable columns all give the same label. Names with no
+    recognisable code, or a code outside OpenFace's 17 intensity columns,
+    are returned unchanged rather than raising.
 
     Parameters
     ----------

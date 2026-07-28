@@ -1,18 +1,14 @@
 """Representative-AU selection: NMF's basis matrix without the NMF step.
 
-Replicates the original analysis's response to NMF's reconstruction R²
-being surprisingly low (see :func:`facedyn.nmf.nmf_reconstruction_error`):
-instead of trusting NMF's compressed 3-component activations, take the
-single highest-loading AU per component from an already-fitted
-:class:`~facedyn.nmf.NMFDecomposer`'s basis matrix, and keep that AU's
-*raw* time series as the representative feature for that component.
+An alternative to NMF activations when reconstruction R2 is low (see
+:func:`facedyn.nmf.nmf_reconstruction_error`). Takes the highest-loading
+AU per component from a fitted :class:`~facedyn.nmf.NMFDecomposer`'s basis
+matrix and keeps that AU's raw time series as the component's
+representative feature.
 
-`final_analysis_NMF_check.Rmd` has no actual argmax code for this -- it
-hardcodes the three chosen column names directly into a ``select()``, based
-on the researcher eyeballing the basis-matrix heatmap and writing the AUs
-down by hand (confirmed by its own intro text: ``Component 1 = AU12,
-Component 2 = AU17, Component 3 = AU01``). This module replaces that
-eyeball-and-transcribe step with real, tested code.
+The original R analysis hardcoded the chosen AUs by eye from the
+basis-matrix heatmap. This replaces that step with a tested argmax. See
+`PIPELINE.md` step 5.
 """
 
 from __future__ import annotations
@@ -36,13 +32,10 @@ def select_representative_aus(
     decomposer : NMFDecomposer
         A fitted decomposer (i.e. ``fit`` already called).
     labels : list of str, optional
-        Row labels, one per factorized column, in the same order as
-        ``decomposer.columns_``. If given, an extra ``label`` column is
-        added with the readable name for each selected AU; pass
+        Row labels, one per factorized column, in ``decomposer.columns_``
+        order. Adds a ``label`` column of readable names. Pass
         ``facedyn.humanise_au_labels(decomposer.columns_)`` for FACS-style
-        names. The ``au`` column (the actual column name) is always
-        returned regardless, since that's what :class:`RepresentativeAUSelector`
-        needs to select real data.
+        names. The ``au`` column is always returned either way.
 
     Returns
     -------
@@ -79,14 +72,9 @@ def select_representative_aus(
 class RepresentativeAUSelector(BaseEstimator, TransformerMixin):
     """Replace NMF activation columns with each component's representative raw AU.
 
-    Unlike :class:`~facedyn.nmf.NMFDecomposer`, this does not fit its own
-    NMF model -- it takes an **already-fitted** decomposer, matching the
-    actual workflow this replicates: fit :class:`NMFDecomposer` once,
-    inspect its reconstruction quality (:func:`facedyn.nmf.nmf_reconstruction_error`,
-    :func:`facedyn.nmf.nmf_reconstruction_r2_per_au`), decide representative-AU
-    selection is warranted, then reuse that same fit here -- not a second,
-    independent NMF fit that could select different AUs than what was
-    actually inspected.
+    Takes an already-fitted decomposer rather than fitting its own, so the
+    AUs selected here are the ones from the fit you inspected. A second
+    independent fit could select different AUs.
 
     Parameters
     ----------
@@ -99,8 +87,8 @@ class RepresentativeAUSelector(BaseEstimator, TransformerMixin):
     selection_ : pd.DataFrame
         Output of :func:`select_representative_aus` for ``decomposer``.
     selected_columns_ : list of str
-        ``selection_``'s ``au`` column, as a plain list -- the columns
-        ``transform`` keeps.
+        ``selection_``'s ``au`` column as a plain list. These are the
+        columns ``transform`` keeps.
     """
 
     def __init__(self, decomposer: NMFDecomposer):

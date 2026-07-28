@@ -1,5 +1,12 @@
 from facedyn.au_labels import humanise_au_label, humanise_au_labels
-from facedyn.features.cmfts import cmfts_features, reshape_for_cmfts
+from facedyn.features import (
+    CallableFeatureExtractor,
+    RFeatureExtractor,
+    TimeSeriesFeatureExtractor,
+    cmfts_r_features,
+    extract_timeseries_features,
+    reshape_to_wide,
+)
 from facedyn.nmf import (
     NMFDecomposer,
     nmf_cophenetic_correlation,
@@ -20,8 +27,12 @@ __all__ = [
     "nmf_cophenetic_correlation",
     "RepresentativeAUSelector",
     "select_representative_aus",
-    "reshape_for_cmfts",
-    "cmfts_features",
+    "reshape_to_wide",
+    "TimeSeriesFeatureExtractor",
+    "extract_timeseries_features",
+    "RFeatureExtractor",
+    "CallableFeatureExtractor",
+    "cmfts_r_features",
     "group_train_test_split",
     "paired_train_test_split",
     "humanise_au_label",

@@ -54,11 +54,10 @@ def nmf_rank_mse_sweep(
 ) -> pd.DataFrame:
     """Fit NMF at each rank and report reconstruction MSE, for rank selection.
 
-    Mirrors the R pipeline's "Optimal K" reconstruction-error sweep. Does
-    not pick a rank automatically — the paper's own rank choice combined
-    this curve with interpretability and alignment with prior work, not a
-    hard rule. Inspect/plot the returned table to choose one, the same way
-    the original analysis did.
+    Measures fit error on the training data only, so error can only improve
+    with more components. See :func:`nmf_rank_cv_sweep` for held-out error
+    and :func:`nmf_cophenetic_correlation` for stability. Does not pick a
+    rank automatically. Inspect or plot the returned table to choose one.
 
     Parameters
     ----------
@@ -112,16 +111,12 @@ def _masked_nmf(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Multiplicative-update NMF with entries excluded from the loss.
 
-    Minimizes ``||mask * (X - W @ H)||^2`` instead of the ordinary
-    ``||X - W @ H||^2`` — entries where ``mask == 0`` never influence the
-    fit. Standard "Weighted NMF" extension of Lee & Seung's multiplicative
-    update algorithm (the unweighted updates ``H *= (WᵀX)/(WᵀWH)``,
-    ``W *= (XHᵀ)/(WHHᵀ)`` generalize directly by inserting the mask).
+    Minimises ``||mask * (X - W @ H)||^2``, so entries where ``mask == 0``
+    never influence the fit. Standard Weighted-NMF extension of Lee &
+    Seung's multiplicative updates.
 
-    Internal helper — not part of the public API. Used by
-    :func:`nmf_rank_cv_sweep` to measure genuine held-out reconstruction
-    error, which requires entries invisible to fitting (unlike sklearn's
-    ``NMF``, which has no notion of excluding individual entries).
+    Internal helper for :func:`nmf_rank_cv_sweep`. sklearn's ``NMF`` has no
+    way to exclude individual entries from its loss, hence this.
 
     Parameters
     ----------
@@ -187,32 +182,15 @@ def nmf_rank_cv_sweep(
 ) -> pd.DataFrame:
     """Cross-validated rank selection: held-out reconstruction MSE vs. rank.
 
-    Unlike :func:`nmf_rank_mse_sweep` (which only measures fit error on the
-    data the model was trained on, so error can only ever improve with more
-    components), this measures generalization: a random fraction of
-    individual matrix *entries* (not whole rows) is held out from fitting
-    per replicate, using :func:`_masked_nmf`, and reconstruction error is
-    measured on those held-out entries. This can reveal overfitting — held-
-    out error bottoming out and then rising with rank, even as training
-    error keeps falling — which a train-only sweep cannot show.
+    Holds out a random fraction of individual matrix entries, not whole
+    rows, then measures error on those entries. This reveals overfitting,
+    where held-out error bottoms out and rises with rank while training
+    error keeps falling. Row-holdout cannot show this, because a held-out
+    row is free to choose new activation weights and so fits about as well
+    under an overfit basis. See `PIPELINE.md` step 4.
 
-    Note on mechanism: entries are masked, not rows. An earlier version of
-    this function held out whole rows and projected them onto a fixed
-    learned basis (as ``sklearn.decomposition.NMF.transform`` does) —
-    that approach turned out *not* to reveal overfitting in practice: a
-    held-out row can always be re-fit about as well as a training row by a
-    sufficiently flexible basis, regardless of whether that basis is
-    itself overfit, since the row is free to choose new activation weights
-    for it. Entry-masking avoids this: a component that merely memorizes
-    one training row's idiosyncrasies can't help reconstruct a masked
-    entry *within that same row*, because the row's other visible entries
-    constrain the fit. This is also why sklearn's off-the-shelf ``NMF``
-    isn't used here — it has no notion of excluding individual entries
-    from its loss, hence :func:`_masked_nmf`.
-
-    The same random mask is reused across all ``ranks`` within a given
-    replicate, so ranks are compared on the same held-out entries within
-    that replicate (a fixed, fair split, not an independent one per rank).
+    One random mask is reused across all `ranks` within a replicate, so
+    ranks are compared on the same held-out entries.
 
     Parameters
     ----------
@@ -228,18 +206,11 @@ def nmf_rank_cv_sweep(
         drawn from a single seeded stream (see ``n_seeds`` for a stronger
         check that also varies that stream itself).
     n_seeds : int, default 1
-        Number of independent top-level seeds to repeat the whole
-        ``n_replicates``-run sweep under. ``n_replicates`` alone only
-        draws multiple masks/initializations from the *one* stream
-        derived from ``random_state``; it doesn't test whether the
-        result is sensitive to that particular seed choice. Setting
-        ``n_seeds > 1`` additionally varies the top-level seed itself
-        (each seed offset from ``random_state`` by a large stride, so
-        their streams don't overlap) and adds a ``seed`` column to the
-        output identifying which top-level seed produced each row. The
-        default of 1 reproduces the original single-seed output exactly
-        (no ``seed`` column) — this is an opt-in robustness check, not a
-        replacement for choosing ``n_replicates``.
+        Number of top-level seeds to repeat the whole sweep under.
+        `n_replicates` alone draws masks from the one stream derived from
+        `random_state`, so it cannot test sensitivity to that seed choice.
+        Values above 1 vary the seed itself and add a ``seed`` column to
+        the output. An opt-in robustness check.
     columns : list of str, optional
         Explicit columns to factorize. If not given, selected via
         ``column_pattern``.
@@ -255,10 +226,10 @@ def nmf_rank_cv_sweep(
     Returns
     -------
     pd.DataFrame
-        Columns ``rank``, ``rep``, ``train_mse``, ``test_mse`` — one row
-        per (rank, replicate) combination — plus a leading ``seed``
-        column when ``n_seeds > 1``. Does not pick a rank automatically;
-        inspect or plot (see :func:`plot_nmf_rank_cv`) to choose one.
+        Columns ``rank``, ``rep``, ``train_mse`` and ``test_mse``, one row
+        per (rank, replicate), plus a leading ``seed`` column when
+        ``n_seeds > 1``. Does not pick a rank automatically. Inspect or plot
+        with :func:`plot_nmf_rank_cv` to choose one.
     """
     cols = _resolve_columns(X, columns, column_pattern)
     data = X[cols].to_numpy()
@@ -302,21 +273,14 @@ def plot_nmf_rank_cv(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Plot :func:`nmf_rank_cv_sweep` output: per-fold train/test MSE vs. rank.
+    """Plot :func:`nmf_rank_cv_sweep` output: train/test MSE vs. rank.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
-    Each replicate is drawn as a faint individual line; a bold summary line
-    across replicates is drawn on top, with a vertical marker at the rank
-    with the lowest summary ``test_mse``. Replicates are plotted as separate
-    line groups deliberately — an earlier version of this same plot (in this
-    project's R exploration) grouped only by train/test color and not by
-    replicate, which zigzagged between replicates' values at each rank and
-    produced confusing breaks wherever a replicate had a missing value. When
-    ``result`` has a ``seed`` column (see :func:`nmf_rank_cv_sweep`'s
-    ``n_seeds``), lines are grouped by ``(seed, rep)`` for the same reason —
-    otherwise two different seeds' ``rep=0`` rows would be zigzagged
-    together as if they were one trajectory.
+    Each replicate is a faint line, with a bold summary line on top and a
+    vertical marker at the rank with the lowest summary ``test_mse``. Lines
+    are grouped per replicate, and per ``(seed, rep)`` when `result` has a
+    ``seed`` column, so separate trajectories are not zigzagged together.
 
     Parameters
     ----------
@@ -325,35 +289,23 @@ def plot_nmf_rank_cv(
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
     robust : bool, default True
-        :func:`_masked_nmf`'s multiplicative updates can occasionally settle
-        on a degenerate fit — most often at higher ranks with limited data —
-        where one component's weight and loading blow up in a way that
-        cancels out on the entries used for fitting but explodes on the
-        held-out ones. That single replicate can then be orders of
-        magnitude larger than every other value, which (a) drags a plain
-        mean summary line far from where most replicates actually sit, and
-        (b) forces a linear y-axis that compresses all the genuinely
-        informative variation near zero. When ``True``, the summary line
-        uses the **median** across replicates instead of the mean, and the
-        y-axis is scaled to a robust range (see ``outlier_z``); any point
-        outside that range is still drawn — pinned to the top of the axis
-        as a ``^`` marker, annotated with its true value — rather than
-        silently dropped. Set to ``False`` to fall back to a plain mean and
-        full autoscaling.
+        Summarise replicates by median rather than mean, and scale the
+        y-axis to a robust range. Guards against the occasional degenerate
+        :func:`_masked_nmf` fit, which can be orders of magnitude larger
+        than every other value and would otherwise drag the summary line
+        and flatten the axis. Outliers are still drawn, pinned to the top
+        of the axis as an annotated ``^`` marker rather than dropped.
     outlier_z : float, default 3.5
         Robust z-score (based on median absolute deviation across all
         train/test MSE values) beyond which a point is treated as an
         outlier for axis-scaling purposes. Only used when ``robust=True``.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename (e.g. ``"rank_cv.pdf"``
-        or ``"rank_cv.png"``) -- format is inferred from the extension.
-        Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------
@@ -448,48 +400,21 @@ def nmf_cophenetic_correlation(
     max_iter: int = 750,
     tol: float = 1e-6,
 ) -> pd.DataFrame:
-    """Cophenetic correlation per rank - an NMF stability diagnostic for
-    rank selection, independent of reconstruction error.
+    """Cophenetic correlation per rank, an NMF stability diagnostic.
 
-    Not part of the original R pipeline (no equivalent computation exists
-    there - see ``PIPELINE.md``); a new addition, since the original
-    analysis's rank choice combined a single train-only MSE-vs-rank curve
-    with alignment to prior work, and this package's own
-    :func:`nmf_rank_cv_sweep` re-checked that with held-out reconstruction
-    error but is still fundamentally an accuracy-based criterion.
-    Implements the complementary, stability-based criterion from Brunet et
-    al. (2004), "Metagenes and molecular pattern discovery using matrix
-    factorization": for a given rank, fit NMF ``n_runs`` times from
-    independent random initializations, and for each run assign every row
-    to its *dominant component* (the column with the largest weight in
-    that row's slice of ``W``). Average, across runs, how often each pair
-    of rows landed in the same dominant component into a single
-    "consensus matrix" - entries near 1 mean that pair was assigned
-    together almost every run, entries near 0 mean almost never. The
-    cophenetic correlation coefficient then measures how cleanly
-    block-structured that consensus matrix is (hierarchical clustering on
-    ``1 - consensus`` as a distance, then correlating the dendrogram's
-    implied distances against the actual ones): a rank whose row-clustering
-    is genuinely stable across random restarts scores close to 1; one
-    where restarts disagree scores lower. This typically starts dropping
-    once rank exceeds the number of genuinely distinct, well-separated
-    components in the data — a signal reconstruction error alone can miss,
-    since more components can always reduce reconstruction error even as
-    their row-assignments become unstable.
+    A stability criterion rather than an accuracy one, so it complements
+    :func:`nmf_rank_cv_sweep` rather than replacing it. Fits NMF `n_runs`
+    times per rank from random initialisations, assigns each row to its
+    dominant component, and measures how cleanly block-structured the
+    resulting consensus matrix is. Stable ranks score near 1. Scores drop
+    once rank exceeds the number of well-separated components, which
+    reconstruction error cannot show. From Brunet et al. (2004).
 
-    Deliberately uses ``init="random"`` rather than the rest of this
-    module's usual ``"nndsvda"`` (see :func:`nmf_rank_mse_sweep`,
-    :class:`NMFDecomposer`): ``nndsvda`` is a near-deterministic SVD-based
-    init, so repeated runs would mostly converge to the same solution and
-    the consensus matrix would trivially look stable regardless of rank —
-    genuinely random restarts are the point here.
+    Uses ``init="random"`` rather than this module's usual ``"nndsvda"``,
+    which is near-deterministic and would make every rank look stable.
 
-    **Cost warning**: builds an ``n_samples x n_samples`` consensus matrix
-    and runs hierarchical clustering on it — both ``O(n_samples^2)`` in
-    memory/time. This is meant for a manageable subsample (a few hundred
-    to a couple of thousand rows), not the full ~90k-row training set;
-    subsample ``X`` yourself before calling this, the same way the
-    ``facedyn`` demo notebook subsamples for :func:`nmf_rank_cv_sweep`.
+    Cost warning: ``O(n_samples^2)`` in memory and time. Subsample `X` to a
+    few hundred or a couple of thousand rows before calling.
 
     Parameters
     ----------
@@ -504,19 +429,11 @@ def nmf_cophenetic_correlation(
         the consensus matrix. More runs give a more stable estimate at
         proportionally higher cost.
     n_jobs : int, optional
-        Number of parallel worker processes for the ``len(ranks) *
-        n_runs`` independent NMF fits (via ``joblib``, following
-        scikit-learn's own convention: ``None``/``1`` = sequential, ``-1``
-        = all cores). Purely a wall-clock optimization — every fit is
-        seeded independently of the others regardless of execution order,
-        so results are identical to the sequential default for any value
-        of ``n_jobs``. The O(n_samples^2) consensus/linkage cost (see
-        below) is unaffected either way — this only parallelizes the NMF
-        refitting, which is what actually dominates runtime at the
-        subsample sizes this function is meant for. Only worth setting
-        for larger workloads: process start-up overhead can make small
-        ones (a handful of ranks/runs on a few hundred rows) *slower*
-        under parallel execution than sequential.
+        Parallel worker processes for the NMF fits. ``None`` or ``1`` is
+        sequential, ``-1`` uses all cores. Every fit is seeded
+        independently of execution order, so results are identical for any
+        value. Start-up overhead can make small workloads slower in
+        parallel than sequentially.
     columns : list of str, optional
         Explicit columns to factorize. If not given, selected via
         ``column_pattern``.
@@ -580,17 +497,13 @@ def plot_nmf_cophenetic_correlation(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Plot :func:`nmf_cophenetic_correlation` output: cophenetic
-    correlation vs. rank.
+    """Plot :func:`nmf_cophenetic_correlation` output against rank.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
-    A complementary view to :func:`plot_nmf_rank_cv`: that plot measures
-    fit accuracy, this measures how *stable* each rank's row-clustering is
-    across random restarts. Look for a rank that's still close to 1 but
-    about to drop at the next rank tried - that's the point beyond which
-    additional components stop corresponding to a distinct, reproducible
-    pattern rather than an unstable split of an existing one.
+    Complements :func:`plot_nmf_rank_cv`, which measures accuracy rather
+    than stability. Look for a rank still close to 1 but about to drop at
+    the next rank tried.
 
     Parameters
     ----------
@@ -599,15 +512,12 @@ def plot_nmf_cophenetic_correlation(
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename (e.g.
-        ``"cophenetic.pdf"`` or ``"cophenetic.png"``) -- format is inferred
-        from the extension. Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------
@@ -640,36 +550,14 @@ def plot_nmf_cophenetic_correlation(
 class NMFDecomposer(BaseEstimator, TransformerMixin):
     """Non-negative matrix factorisation of AU columns via sklearn's NMF.
 
-    Fits on the resolved numeric columns; ``transform`` returns all other
-    (metadata) columns unchanged plus new per-row component-activation
-    columns. Mirrors R's ``dta_nmf_output`` shape: R's factorisation
-    ``A ≈ W · diag(d) · H`` separates shape (unit-normalized W, H) from
-    scale (d) for interpretability, which sklearn's NMF doesn't do — its
-    solver absorbs scale directly into W/H instead.
+    Fits on the resolved numeric columns. ``transform`` returns all other
+    columns unchanged, plus one activation column per component.
 
-    **Validated against real R output** (see
-    ``tests/validation/test_nmf_decomposer_validation.py``, comparing
-    against ``r_NMF.csv`` / R's real ``dta_nmf_output``): after matching
-    components between the two fits (unconstrained NMF only identifies
-    components up to a permutation and an arbitrary positive rescaling of
-    each component, since ``(W, H)`` and ``(W·S, S⁻¹·H)`` reconstruct the
-    same data for any positive diagonal ``S`` — components are matched via
-    Hungarian assignment on cross-correlation, the standard technique for
-    this ambiguity), each matched pair correlates at >0.999 and is related
-    by a clean per-component proportional scale (least-squares slope
-    through the origin, <1% relative residual) — strong evidence sklearn
-    finds essentially the same 3 components RcppML did. This *contradicts*
-    an earlier, untested assumption recorded here that sklearn's
-    ``fit_transform`` output would already numerically equal R's
-    ``diag(d)``-scaled H with no rescaling needed: empirically, each
-    component ends up on its own arbitrary scale (R's real output values
-    are ~60-130x larger than sklearn's per component, and that ratio
-    differs by component) — proportional per component, not identical.
-    Not corrected here since nothing downstream yet depends on matching
-    R's absolute scale (representative-AU selection, the next pipeline
-    step, only needs each component's *argmax* AU, which is scale-invariant
-    per column) — but worth knowing before relying on these activation
-    values' absolute magnitude for anything new.
+    Activation magnitudes are only defined up to an arbitrary positive
+    scale per component, since ``(W, H)`` and ``(W·S, S⁻¹·H)`` reconstruct
+    the same data for any positive diagonal ``S``. Do not compare raw
+    magnitudes across fits or against R without rescaling. See
+    `PIPELINE.md` step 4 for the validation against real R output.
 
     Parameters
     ----------
@@ -753,10 +641,8 @@ def plot_nmf_basis_heatmap(
 ):
     """Plot a fitted :class:`NMFDecomposer`'s basis matrix as a heatmap.
 
-    Replicates the original R analysis's basis-matrix figure
-    (``NMF::aheatmap`` on ``model_nmf$w`` in ``final_analysis.Rmd``):
-    features (rows) against components (columns), no clustering/reordering
-    of either axis, sequential color scale.
+    Features on rows, components on columns, with no clustering or
+    reordering of either axis.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
@@ -766,19 +652,12 @@ def plot_nmf_basis_heatmap(
         A fitted decomposer (i.e. ``fit`` or ``fit_transform`` already
         called).
     normalize : bool, default True
-        If True (matching the R analysis's *published* figure, built from
-        ``apply(model_nmf$w, 2, fn_maxnormalise)``), each component's
-        column is independently min-max scaled to ``[0, 1]`` before
-        plotting. This isn't just cosmetic: unconstrained NMF only
-        identifies components up to an arbitrary positive per-component
-        scale (see :class:`NMFDecomposer`'s docstring), so the *raw* basis
-        values from two different NMF fits -- even a correct one -- aren't
-        expected to land on the same color scale; min-max normalizing each
-        column independently removes that ambiguity, which is why it's
-        what R's own published figure actually plots, not the raw matrix.
-        Set to False to see the untransformed ``components_`` values (only
-        meaningfully comparable to another fit of the *same* model, not
-        across libraries/re-fits).
+        Min-max scale each component's column to ``[0, 1]`` before
+        plotting. This removes NMF's arbitrary per-component scale (see
+        :class:`NMFDecomposer`), without which two correct fits need not
+        land on the same colour scale. Set to False to see raw
+        ``components_`` values, which are only comparable to another fit
+        of the same model.
     labels : list of str, optional
         Row labels, one per factorized column, in the same order as
         ``decomposer.columns_``. Defaults to ``decomposer.columns_``
@@ -790,15 +669,12 @@ def plot_nmf_basis_heatmap(
         Matplotlib colormap name. The default is a sequential blue scale,
         matching the R figure's ``colorRampPalette(brewer.pal(6, "Blues"))``.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename (e.g. ``"basis.pdf"`` or
-        ``"basis.png"``) -- format is inferred from the extension. Not
-        saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------
@@ -839,14 +715,12 @@ def plot_nmf_basis_heatmap(
 
 
 def _reconstruction_metrics(original: np.ndarray, reconstructed: np.ndarray) -> dict[str, float]:
-    """RMSE/NRMSE/MAE/R² of `reconstructed` vs. `original`, matching
-    `final_analysis.Rmd`'s reconstruction-validation formulas exactly
-    (~L695-711): NRMSE divides by the original data's own range, and R² is
-    ``1 - sum(error**2) / sum((original - mean(original))**2)`` using
-    ``original``'s single *scalar* mean over the whole matrix -- R's
-    ``mean()`` on a matrix, not a per-column mean -- so this is not simply
-    `sklearn.metrics.r2_score` (which defaults to per-column baselines for
-    2D input).
+    """RMSE, NRMSE, MAE and R2 of `reconstructed` against `original`.
+
+    NRMSE divides by the original data's own range. R2 uses a single scalar
+    mean over the whole matrix as its baseline, not a per-column mean, so
+    this is not `sklearn.metrics.r2_score`, which defaults to per-column
+    baselines for 2D input.
     """
     error = original - reconstructed
     rmse = np.sqrt(np.mean(error**2))
@@ -863,15 +737,9 @@ def _reconstruct(decomposer: NMFDecomposer, X: pd.DataFrame) -> tuple[np.ndarray
 
     Shared by :func:`nmf_reconstruction_error` and
     :func:`nmf_reconstruction_r2_per_au`. Projects `X` onto the decomposer's
-    *fixed* basis via ``decomposer.transform`` (sklearn's non-negative
-    least-squares-equivalent solve for activations given frozen
-    ``components_``) and reconstructs via ``activations @ components_``.
-    This one code path covers both in-sample data (training reconstruction
-    quality) and out-of-sample data (held-out generalisation) -- unlike
-    `final_analysis.Rmd`, which hand-rolls a separate per-frame NNLS
-    projection loop (~L1128-1198) for the latter since base R has no
-    fixed-basis projection primitive; sklearn's `NMF.transform` already
-    solves exactly that problem.
+    fixed basis via ``decomposer.transform``, then reconstructs via
+    ``activations @ components_``. The same path serves in-sample and
+    out-of-sample data.
     """
     check_is_fitted(decomposer, "components_")
     original = X[decomposer.columns_].to_numpy()
@@ -884,20 +752,17 @@ def _reconstruct(decomposer: NMFDecomposer, X: pd.DataFrame) -> tuple[np.ndarray
 def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.DataFrame:
     """Aggregate reconstruction-quality metrics for a fitted decomposer.
 
-    Replicates `final_analysis.Rmd`'s reconstruction-validation section
-    (~L695-711): reconstructs `X` from its NMF activations and reports how
-    much of the original AU signal survives the compression down to
-    ``decomposer.n_components`` components. R² here is exactly "proportion
-    of AU signal variance retained by NMF" -- the quantity the original
-    analysis found surprisingly low (~0.42 in-sample), motivating the
-    later move to representative-AU selection instead of NMF activations
-    for downstream feature extraction.
+    Reconstructs `X` from its NMF activations and reports how much of the
+    original AU signal survives compression to ``decomposer.n_components``.
+    R2 is the proportion of AU signal variance retained.
 
-    Works on *any* `X` containing ``decomposer.columns_``: pass the
-    training data for in-sample fit quality, or held-out data (a test
-    split, or any other video set) for out-of-sample generalisation --
-    R's separate "test set" and "40 held-out videos" sections are both
-    just this same call with different data, not separate code paths.
+    Works on any `X` containing ``decomposer.columns_``. Pass the training
+    data for in-sample quality, or held-out data for generalisation. If R2
+    is low, consider
+    :func:`~facedyn.representative_aus.select_representative_aus` instead
+    of NMF activations. See `PIPELINE.md` step 4 for the validation against
+    real R output, including a discrepancy between R's prose and its own
+    per-AU numbers.
 
     Parameters
     ----------
@@ -911,8 +776,7 @@ def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.D
     -------
     pd.DataFrame
         Columns ``metric`` and ``value``, one row each for ``"RMSE"``,
-        ``"NRMSE"``, ``"MAE"``, ``"R2"`` -- matching
-        `final_analysis.Rmd`'s ``dta_nmf_recon_err`` table shape.
+        ``"NRMSE"``, ``"MAE"`` and ``"R2"``.
     """
     original, reconstructed = _reconstruct(decomposer, X)
     metrics = _reconstruction_metrics(original, reconstructed)
@@ -924,14 +788,11 @@ def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.D
 def nmf_reconstruction_r2_per_au(
     decomposer: NMFDecomposer, X: pd.DataFrame, labels: list[str] | None = None
 ) -> pd.DataFrame:
-    """Per-AU reconstruction R² for a fitted decomposer.
+    """Per-AU reconstruction R2 for a fitted decomposer.
 
-    Replicates `final_analysis.Rmd`'s per-AU breakdown (~L4225-4260,
-    ``r2_vec``/``dta_r2``): the same R² formula as
-    :func:`nmf_reconstruction_error`, computed independently per AU column
-    rather than aggregated over the whole matrix -- shows *which* AUs the
-    NMF compression preserves well vs. poorly (the original analysis found
-    AU07 best, ~0.887-0.899, and AU23 worst, ~0.010-0.011).
+    The same R2 formula as :func:`nmf_reconstruction_error`, computed per AU
+    column rather than over the whole matrix. Shows which AUs the NMF
+    compression preserves and which it loses.
 
     Parameters
     ----------
@@ -941,17 +802,15 @@ def nmf_reconstruction_r2_per_au(
         Data containing ``decomposer.columns_`` (plus any other columns,
         which are ignored).
     labels : list of str, optional
-        Row labels, one per factorized column, in the same order as
-        ``decomposer.columns_``. Defaults to ``decomposer.columns_``
-        itself; pass ``facedyn.humanise_au_labels(decomposer.columns_)``
-        for readable AU names instead of raw column names.
+        Row labels, one per factorized column, in ``decomposer.columns_``
+        order. Pass ``facedyn.humanise_au_labels(decomposer.columns_)`` for
+        readable AU names.
 
     Returns
     -------
     pd.DataFrame
         Columns ``au`` and ``r2``, one row per factorized column, sorted
-        descending by ``r2`` -- matching
-        `final_analysis.Rmd`'s ``dplyr::arrange(desc(...))``.
+        descending by ``r2``.
     """
     original, reconstructed = _reconstruct(decomposer, X)
     error = original - reconstructed
@@ -977,12 +836,9 @@ def plot_nmf_reconstruction(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Plot original vs. reconstructed AU activation over time, for one AU
-    and one video.
+    """Plot original against reconstructed AU activation for one AU and video.
 
-    Replicates `final_analysis.Rmd`'s "Visualisation of Reconstruction
-    Quality" plot (~L738-780): a quick visual sanity check of what the R²
-    numbers from :func:`nmf_reconstruction_error` mean in practice for a
+    A visual check of what :func:`nmf_reconstruction_error`'s R2 means for a
     single signal.
 
     Requires matplotlib (``pip install facedyn[viz]``).
@@ -996,9 +852,7 @@ def plot_nmf_reconstruction(
         ``frame_col``.
     au : str, optional
         Which factorized column to plot. Defaults to
-        ``decomposer.columns_[0]``. (`final_analysis.Rmd` hardcoded AU07
-        for this plot with no stated reason -- any factorized AU can be
-        requested here instead.)
+        ``decomposer.columns_[0]``.
     video_id : optional
         Value of ``group_col`` identifying which video's rows to plot.
         Defaults to the first unique value in ``group_col``.
@@ -1009,14 +863,12 @@ def plot_nmf_reconstruction(
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename -- format is inferred
-        from the extension. Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------
@@ -1072,14 +924,11 @@ def plot_nmf_reconstruction_extremes(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Plot original vs. reconstructed activation for the best- and
-    worst-reconstructed AUs, side by side, for one video.
+    """Plot the best and worst reconstructed AUs side by side, for one video.
 
-    Replicates `final_analysis.Rmd`'s "Reconstruction Pt2" plot
-    (~L4262-4310): identifies the highest- and lowest-R² AUs (via
-    :func:`nmf_reconstruction_r2_per_au`) and plots each as
-    :func:`plot_nmf_reconstruction` would, so the best- and worst-case
-    reconstructions can be compared directly.
+    Finds the highest- and lowest-R2 AUs via
+    :func:`nmf_reconstruction_r2_per_au` and plots each as
+    :func:`plot_nmf_reconstruction` would.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
@@ -1104,14 +953,12 @@ def plot_nmf_reconstruction_extremes(
         Two Axes (best, worst) to draw on. A new ``1 x 2`` grid is created
         if not given.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename -- format is inferred
-        from the extension. Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------
@@ -1159,13 +1006,10 @@ def plot_nmf_reconstruction_r2_bar(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Bar chart of per-AU reconstruction R² (:func:`nmf_reconstruction_r2_per_au`'s output).
+    """Bar chart of per-AU reconstruction R2.
 
-    Not part of `final_analysis.Rmd` (it only tabulates ``dta_r2``, never
-    plots it) -- added since a sorted bar chart is the most direct single
-    view of which AUs the NMF compression retains vs. loses, the exact
-    question the original analysis's reconstruction check was trying to
-    answer.
+    A sorted view of which AUs the NMF compression retains and which it
+    loses. Takes :func:`nmf_reconstruction_r2_per_au`'s output.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
@@ -1176,14 +1020,12 @@ def plot_nmf_reconstruction_r2_bar(
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename -- format is inferred
-        from the extension. Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------

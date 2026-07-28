@@ -14,12 +14,9 @@ from facedyn._plot_utils import save_figure
 class RollingSmoother(BaseEstimator, TransformerMixin):
     """Left-aligned rolling mean, edge-extended, applied within each video.
 
-    Replicates R's ``zoo::rollmean(x, k, fill = "extend", align = "left")``
-    applied per-group via ``dplyr::group_by``. pandas has no native
-    left-aligned rolling window, so this reverses the series, applies a
-    standard (right-aligned) rolling mean, and reverses back; edge frames
-    that fall short of a full window are filled by carrying the nearest
-    valid value outward ("extend").
+    Edge frames that fall short of a full window carry the nearest valid
+    value outward. Replicates R's
+    ``zoo::rollmean(x, k, fill = "extend", align = "left")`` per group.
 
     Parameters
     ----------
@@ -98,9 +95,8 @@ def plot_smoothing_comparison(
 
     Requires matplotlib (``pip install facedyn[viz]``).
 
-    Intended for picking a rolling ``window`` size: run
-    :class:`RollingSmoother` with a candidate window, then use this to see
-    how aggressively it flattens the signal for a given video/column.
+    Useful for picking a `window` size: smooth with a candidate window, then
+    check how aggressively it flattens the signal.
 
     Parameters
     ----------
@@ -129,15 +125,12 @@ def plot_smoothing_comparison(
         Axes to draw on when ``mode="overlay"``. A new figure/axes is
         created if not given.
     save_path : str or pathlib.Path, optional
-        If given, save the figure to this filename (e.g.
-        ``"smoothing.pdf"`` or ``"smoothing.png"``) -- format is inferred
-        from the extension. Not saved if left as ``None`` (the default).
+        Filename to save the figure to. Format is inferred from the
+        extension. Not saved if ``None``.
     output_dir : str or pathlib.Path, default "."
-        Directory ``save_path`` is written into (created if it doesn't
-        already exist). Ignored if ``save_path`` is None.
+        Directory `save_path` is written into, created if needed.
     dpi : int, default 300
-        Resolution used when saving to a raster format (e.g. PNG); ignored
-        for vector formats (e.g. PDF) and if ``save_path`` is None.
+        Resolution for raster formats. Ignored for vector formats.
 
     Returns
     -------

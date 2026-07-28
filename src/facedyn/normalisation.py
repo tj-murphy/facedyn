@@ -10,25 +10,17 @@ from sklearn.utils.validation import check_is_fitted
 
 
 class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
-    """Z-score columns using train-set-learned mean/SD, then shift to non-negative.
+    """Z-score columns using train-set mean and SD, then shift to non-negative.
 
-    Replicates the R pipeline's ``fn_z_score_shift``. Two behaviors here are
-    less obvious than they look, confirmed against the R source (both
-    differ from how the originating paper's prose describes this step,
-    which is imprecise — this replicates the code, since that's what
-    produced the published results):
+    Two behaviours are easy to misread. Mean and SD are pooled across all
+    rows passed to `fit`, not computed per video, giving one pair of
+    numbers per column. The non-negativity shift is not a frozen fit-time
+    parameter: it is recomputed on every `transform` call, so each dataset
+    gets its own anchor and the output is non-negative whatever the input.
+    Only mean and SD are frozen from `fit`.
 
-    - Mean and SD are pooled across *all* rows passed to ``fit`` (typically
-      the whole training set: every video, every frame) rather than
-      computed per video. One pair of numbers per column.
-    - The non-negativity shift (subtracting a column's minimum) is **not**
-      a frozen fit-time parameter. It's recomputed fresh every time
-      ``transform`` is called, on whatever data is passed in — so
-      transforming the training set, the test set, and any later new data
-      each get their own independently-anchored shift. Only the mean/SD
-      used for the z-score itself are frozen from ``fit``. This guarantees
-      the output is non-negative regardless of how extreme new data is
-      compared to what was seen during training.
+    Both replicate the R code rather than the paper's prose, which
+    describes this step imprecisely. See `PIPELINE.md` step 3.
 
     Parameters
     ----------
