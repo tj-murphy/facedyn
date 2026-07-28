@@ -30,8 +30,10 @@ env/
 .ipynb_checkpoints/
 notebooks/
 
-# Large / superseded data — see PIPELINE.md validation protocol:
-# small fixtures in tests/validation/fixtures/ replace these for testing.
+# Outdated code, not relevant to facedyn
+cmfts_port/
+
+# Data for validation/testing
 Data/
 python_smoothed.csv
 R Validation Data/
