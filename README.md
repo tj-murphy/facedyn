@@ -23,9 +23,14 @@ It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), inclu
 - Feature diagnostics and optional cleanup: NaN/Inf/near-zero-variance reporting,
   plus an opt-in transformer for dropping, imputing (missForest-equivalent) and pruning,
   working the same way regardless of which feature-extraction route produced the data
+- Feature selection: a native Boruta implementation, with out-of-bag permutation importance matching R's `ranger` backend. Repeats the
+  run across seeds by default and reports how often each feature survives, because a single
+  Boruta run on correlated features returns a confident-looking list that largely does not
+  reproduce — on this project's own data only 1 of the 8 originally published features
+  clears 80% of seeds. Ships correlated-cluster diagnostics to show why features churn,
+  plus importance, stability and cluster plots
 
 TO DO:
-- Feature selection
 - Classification
 
 Project is under active development.
