@@ -1,10 +1,12 @@
 from facedyn.au_labels import humanise_au_label, humanise_au_labels
 from facedyn.features import (
     CallableFeatureExtractor,
+    FeatureCleaner,
     RFeatureExtractor,
     TimeSeriesFeatureExtractor,
     cmfts_r_features,
     extract_timeseries_features,
+    feature_diagnostics,
     reshape_to_wide,
 )
 from facedyn.nmf import (
@@ -33,6 +35,8 @@ __all__ = [
     "RFeatureExtractor",
     "CallableFeatureExtractor",
     "cmfts_r_features",
+    "feature_diagnostics",
+    "FeatureCleaner",
     "group_train_test_split",
     "paired_train_test_split",
     "humanise_au_label",

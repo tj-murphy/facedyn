@@ -26,6 +26,7 @@ from scipy import signal, stats
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
+from facedyn.features._utils import is_constant as _is_constant
 from facedyn.features.reshape import apply_rowwise
 
 FEATURE_NAMES: list[str] = [
@@ -52,19 +53,6 @@ FEATURE_GROUPS: dict[str, list[str]] = {
     "activation": FEATURE_NAMES[23:30],
     "meta": FEATURE_NAMES[30:31],
 }
-
-
-def _is_constant(x: np.ndarray) -> bool:
-    """Whether `x` is constant to within floating-point tolerance.
-
-    Not ``x.std() == 0``. Constant AU series still arrive with a standard
-    deviation of about 1e-30 after upstream smoothing and normalisation, so
-    an exact test reports them as varying and lets near-zero denominators
-    through.
-    """
-    if len(x) == 0:
-        return True
-    return bool(np.allclose(x, x[0], rtol=1e-8, atol=1e-12, equal_nan=False))
 
 
 # --------------------------------------------------------------------------

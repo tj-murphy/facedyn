@@ -11,6 +11,11 @@ Three interchangeable routes from the same wide input shape (see
   (pycatch22, tsfresh, etc).
 """
 
+from facedyn.features.cleaning import (
+    FeatureCleaner,
+    feature_diagnostics,
+    plot_feature_diagnostics,
+)
 from facedyn.features.external import (
     CallableFeatureExtractor,
     RFeatureExtractor,
@@ -36,4 +41,7 @@ __all__ = [
     "RFeatureExtractor",
     "CallableFeatureExtractor",
     "cmfts_r_features",
+    "feature_diagnostics",
+    "plot_feature_diagnostics",
+    "FeatureCleaner",
 ]
