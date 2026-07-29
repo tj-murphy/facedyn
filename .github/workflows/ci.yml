@@ -48,7 +48,9 @@ jobs:
           python -c "
           import facedyn
           import facedyn.au_labels
+          import facedyn.feature_selection
           import facedyn.features
+          import facedyn.features.cleaning
           import facedyn.features.external
           import facedyn.features.reshape
           import facedyn.features.timeseries

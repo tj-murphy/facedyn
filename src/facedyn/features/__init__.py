@@ -21,7 +21,7 @@ from facedyn.features.external import (
     RFeatureExtractor,
     cmfts_r_features,
 )
-from facedyn.features.reshape import apply_rowwise, reshape_to_wide
+from facedyn.features.reshape import apply_rowwise, pivot_features_wide, reshape_to_wide
 from facedyn.features.timeseries import (
     FEATURE_GROUPS,
     FEATURE_NAMES,
@@ -32,6 +32,7 @@ from facedyn.features.timeseries import (
 
 __all__ = [
     "reshape_to_wide",
+    "pivot_features_wide",
     "apply_rowwise",
     "TimeSeriesFeatureExtractor",
     "extract_features",

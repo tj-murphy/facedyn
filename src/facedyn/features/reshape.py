@@ -15,6 +15,27 @@ import pandas as pd
 from joblib import Parallel, delayed
 
 
+def _resolve_id_vars(df: pd.DataFrame, candidates: list[str], group_col: str) -> list[str]:
+    """Auto-detect metadata columns that are constant within each group.
+
+    Shared by `reshape_to_wide` and `pivot_features_wide`: both carry
+    per-group metadata through a pivot, and both drop (with a warning) any
+    candidate column that actually varies within a group, since including
+    one would fragment the pivot into more than one row per group.
+    """
+    constant_per_group = df.groupby(group_col, sort=False)[candidates].nunique(dropna=False).max() <= 1
+    id_vars = constant_per_group.index[constant_per_group].tolist()
+    dropped = [c for c in candidates if c not in id_vars]
+    if dropped:
+        warnings.warn(
+            f"Dropping columns that vary within a {group_col!r} group (not "
+            f"safe to carry through as per-group metadata): {dropped}. Pass "
+            f"`id_vars` explicitly to control this.",
+            stacklevel=3,
+        )
+    return id_vars
+
+
 def reshape_to_wide(
     df: pd.DataFrame,
     value_cols: list[str],
@@ -52,16 +73,7 @@ def reshape_to_wide(
     """
     if id_vars is None:
         candidates = [c for c in df.columns if c not in value_cols and c not in (group_col, frame_col)]
-        constant_per_group = df.groupby(group_col, sort=False)[candidates].nunique(dropna=False).max() <= 1
-        id_vars = constant_per_group.index[constant_per_group].tolist()
-        dropped = [c for c in candidates if c not in id_vars]
-        if dropped:
-            warnings.warn(
-                f"Dropping columns that vary within a {group_col!r} group (not "
-                f"safe to carry through as per-video metadata): {dropped}. Pass "
-                f"`id_vars` explicitly to control this.",
-                stacklevel=2,
-            )
+        id_vars = _resolve_id_vars(df, candidates, group_col)
     keys = [group_col, *id_vars]
 
     long = df.melt(
@@ -145,3 +157,67 @@ def apply_rowwise(
 
     features = pd.DataFrame(list(rows)).reset_index(drop=True)
     return pd.concat([metadata, features], axis=1)
+
+
+def pivot_features_wide(
+    df: pd.DataFrame,
+    group_col: str = "video_filename",
+    series_col: str = "series",
+    feature_columns: list[str] | None = None,
+    id_vars: list[str] | None = None,
+) -> pd.DataFrame:
+    """Pivot one-row-per-(group, series) feature output to one row per group.
+
+    Takes the shape every extractor in this subpackage returns (one row per
+    video x series -- e.g. :class:`~facedyn.features.timeseries.TimeSeriesFeatureExtractor`
+    or :class:`~facedyn.features.cleaning.FeatureCleaner`'s output) and
+    produces the shape a cross-series learner needs instead: one row per
+    video, with every series' features as separate, series-suffixed columns
+    (e.g. ``mean_smth_AU01_r``, ``mean_smth_AU12_r``, ...). Mirrors the
+    pivot the real R analysis does (``dta_cmfts_output_concat``,
+    `final_analysis_NMF_check.Rmd`) immediately before Boruta feature
+    selection -- see :mod:`facedyn.feature_selection`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        One row per (group, series).
+    group_col : str, default "video_filename"
+        Column identifying which rows belong to which group (video).
+    series_col : str, default "series"
+        Column identifying which series each row's features came from.
+    feature_columns : list of str, optional
+        Which columns to pivot. If not given, every numeric column (other
+        than `group_col`/`series_col`) is treated as a feature column --
+        pass this explicitly (e.g. ``extractor.get_feature_names_out()``)
+        whenever a metadata column might also be numeric, since a numeric
+        metadata column would otherwise be swept up and pivoted as if it
+        were a real feature rather than checked against `id_vars`.
+    id_vars : list of str, optional
+        Metadata columns to carry through, one value per group. Defaults to
+        those taking exactly one value within every group. Columns that
+        vary within a group are dropped with a warning, since including one
+        would fragment the pivot into more than one row per group.
+
+    Returns
+    -------
+    pd.DataFrame
+        One row per `group_col` value. Columns are `id_vars`, `group_col`,
+        then one ``f"{feature}_{series}"`` column per (feature, series)
+        pair.
+    """
+    if feature_columns is None:
+        feature_columns = [
+            c for c in df.columns
+            if c not in (group_col, series_col) and pd.api.types.is_numeric_dtype(df[c])
+        ]
+    if id_vars is None:
+        candidates = [
+            c for c in df.columns if c not in feature_columns and c not in (group_col, series_col)
+        ]
+        id_vars = _resolve_id_vars(df, candidates, group_col)
+    keys = [group_col, *id_vars]
+
+    wide = df.pivot(index=keys, columns=series_col, values=feature_columns)
+    wide.columns = [f"{feature}_{series}" for feature, series in wide.columns]
+    return wide.reset_index()

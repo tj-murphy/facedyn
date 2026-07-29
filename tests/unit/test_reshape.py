@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from facedyn.features.reshape import apply_rowwise, reshape_to_wide, split_wide
+from facedyn.features.reshape import apply_rowwise, pivot_features_wide, reshape_to_wide, split_wide
 
 
 def test_reshape_to_wide_one_row_per_video_and_series():
@@ -116,3 +116,64 @@ def test_apply_rowwise_parallel_matches_serial():
         apply_rowwise(wide, _row_sum, n_jobs=1),
         apply_rowwise(wide, _row_sum, n_jobs=2),
     )
+
+
+def _feature_rows(n_videos: int = 2) -> pd.DataFrame:
+    rng = np.random.default_rng(0)
+    rows = []
+    for i in range(n_videos):
+        for series in ["smth_AU01_r", "smth_AU06_r", "smth_AU12_r"]:
+            rows.append({
+                "video_filename": f"v{i}",
+                "isfakeorreal": "real",
+                "series": series,
+                "mean": rng.random(),
+                "sd": 0.1,
+            })
+    return pd.DataFrame(rows)
+
+
+def test_pivot_features_wide_one_row_per_group_series_suffixed_columns():
+    df = _feature_rows(n_videos=2)
+
+    wide = pivot_features_wide(df)
+
+    assert wide.shape[0] == 2  # one row per video, not one per (video, series)
+    expected_cols = {
+        "video_filename", "isfakeorreal",
+        "mean_smth_AU01_r", "mean_smth_AU06_r", "mean_smth_AU12_r",
+        "sd_smth_AU01_r", "sd_smth_AU06_r", "sd_smth_AU12_r",
+    }
+    assert set(wide.columns) == expected_cols
+
+
+def test_pivot_features_wide_values_land_in_the_right_column():
+    df = _feature_rows(n_videos=1)
+    df.loc[df["series"] == "smth_AU01_r", "mean"] = 1.23
+
+    wide = pivot_features_wide(df)
+
+    assert wide.loc[0, "mean_smth_AU01_r"] == 1.23
+
+
+def test_pivot_features_wide_drops_series_varying_columns_not_fragments_pivot():
+    df = _feature_rows(n_videos=1)
+    # Non-numeric, so it's an id_vars candidate (not swept into the numeric
+    # feature-column default) -- and varies per series, so it must be
+    # dropped from id_vars, not silently kept as a single per-video value.
+    df["note"] = ["a", "b", "c"]
+
+    with pytest.warns(UserWarning, match="note"):
+        wide = pivot_features_wide(df)
+
+    assert wide.shape[0] == 1
+    assert "note" not in wide.columns
+
+
+def test_pivot_features_wide_respects_explicit_feature_columns():
+    df = _feature_rows(n_videos=1)
+
+    wide = pivot_features_wide(df, feature_columns=["mean"])
+
+    assert "sd_smth_AU01_r" not in wide.columns
+    assert "mean_smth_AU01_r" in wide.columns
