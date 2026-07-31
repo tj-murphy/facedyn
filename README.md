@@ -26,12 +26,25 @@ It packages the entire pipeline featured in Murphy, Cook & Cuve (in prep), inclu
 - Feature selection: a native Boruta implementation, with out-of-bag permutation importance matching R's `ranger` backend. Repeats the
   run across seeds by default and reports how often each feature survives, because a single
   Boruta run on correlated features returns a confident-looking list that largely does not
-  reproduce — on this project's own data only 1 of the 8 originally published features
-  clears 80% of seeds. Ships correlated-cluster diagnostics to show why features churn,
+  reproduce. Ships correlated-cluster diagnostics to show why features churn,
   plus importance, stability and cluster plots
+- Classification: random forest, RBF-kernel SVM, unpenalised logistic regression and a
+  documented C5.0 substitute (AdaBoost, since C5.0 has no Python implementation), each
+  built as a scaler + estimator pipeline with the original analysis's hyperparameters
+- Evaluation: `caret::confusionMatrix`-equivalent statistics (accuracy with exact
+  Clopper-Pearson intervals, no-information-rate test, kappa, McNemar, sensitivity and
+  specificity) and `pROC`-equivalent ROC statistics (AUC with DeLong intervals, paired and
+  unpaired DeLong tests), validated against the original R output; ROC, confusion-matrix,
+  predicted-probability, decision-boundary and accuracy-comparison plots
+- Pair-aware cross-validation: group-id helpers and a repeated stratified grouped k-fold
+  splitter. On matched-pairs data (each deepfake generated from a specific real video), folds
+  that split a pair train on one twin and test on its opposite-labelled counterpart, which
+  drove ROC-AUC below chance in the original analysis's data, so grouping is the default
+  and the ungrouped path warns
 
 TO DO:
-- Classification
+- Boruta selection-threshold tuning
+- Emotion-subset and valence analyses
 
 Project is under active development.
 
