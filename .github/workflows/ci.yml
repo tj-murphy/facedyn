@@ -48,6 +48,8 @@ jobs:
           python -c "
           import facedyn
           import facedyn.au_labels
+          import facedyn.classifiers
+          import facedyn.evaluation
           import facedyn.feature_selection
           import facedyn.features
           import facedyn.features.cleaning

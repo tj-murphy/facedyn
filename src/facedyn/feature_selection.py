@@ -643,6 +643,17 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
     arbitrarily, so a cluster can be selected in every single run while
     no individual member is.
 
+    **What repeating the runs does and does not buy you.** Measured on
+    Paper 1's data against its held-out test set, a stability-selected set
+    scores the same as the paper's single-run selection (0.710 vs 0.706 --
+    a difference well inside the +-0.11 confidence interval an n=94 test
+    set supports), using half as many features. So this is **not** a way
+    to get a more accurate classifier; it is a way to get a selection that
+    does not depend on which seed you happened to run, and to know which
+    features would have survived a different one. See
+    `selection_threshold` for the one setting that genuinely can make the
+    result worse.
+
     Parameters
     ----------
     feature_columns : list of str, optional
@@ -655,6 +666,26 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
         Fraction of runs in which a feature must be confirmed (after
         tentative rough fix) to be kept by `transform`. Ignored when
         ``n_repeats=1``, where any confirmed feature is kept.
+
+        **This choice matters more than anything else in this class, and
+        the default is conservative rather than optimal.** Measured on
+        Paper 1's real data against its genuinely held-out 94-video test
+        set: ``0.8`` keeps 1 feature scoring **0.547** ROC-AUC (near
+        chance), while ``0.5`` keeps 4 scoring **0.710** and ``0.25``
+        keeps 8 scoring **0.710** -- the latter two matching the 0.706 of
+        the 8 features the paper published. Requiring 80% of runs is too
+        strict for a weak signal, and on that dataset the default would
+        have produced a worse result than no stability selection at all.
+
+        The default stays at 0.8 because it is the honest reading of
+        "confirmed in the large majority of runs", and because the
+        thresholds that performed better there were identified *using
+        that test set* -- which is not information a user starting out
+        has. Treat the threshold as a decision to justify (ideally
+        against held-out data), not a default to accept, and read
+        ``stability_``'s frequency ranking before committing to any
+        cut-off: the ranking is the dependable output here, not the
+        binary keep/drop it induces.
     importance : {"permutation", "gini"} or callable, default "permutation"
         Importance backend. ``"permutation"`` is
         :func:`oob_permutation_importance`, matching R. ``"gini"`` is
@@ -773,21 +804,25 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
 
         forest_n_jobs = self.n_jobs if self.n_repeats == 1 else 1
         importance_fn = self._resolve_importance_fn(forest_n_jobs)
+        args = (X_array, y_array, self.feature_columns_, importance_fn,
+                self.alpha, self.max_iter)
 
-        self.runs_ = list(
-            Parallel(n_jobs=self.n_jobs)(
-                delayed(_boruta_run)(
-                    X_array,
-                    y_array,
-                    self.feature_columns_,
-                    importance_fn,
-                    self.alpha,
-                    self.max_iter,
-                    int(seed),
+        if self.n_repeats == 1:
+            # Run inline rather than through `joblib`. There is nothing to
+            # parallelise across with a single repeat, and starting a
+            # `loky` pool anyway is not merely wasteful: the worker's
+            # forest also asks for `n_jobs`, and that nesting deadlocked a
+            # Jupyter kernel outright (0% CPU, no workers, no progress)
+            # while running fine in a plain script. Single-run selection is
+            # the common case inside a cross-validation loop, which is
+            # exactly where that hang showed up.
+            self.runs_ = [_boruta_run(*args, int(seeds[0]))]
+        else:
+            self.runs_ = list(
+                Parallel(n_jobs=self.n_jobs)(
+                    delayed(_boruta_run)(*args, int(seed)) for seed in seeds
                 )
-                for seed in seeds
             )
-        )
 
         self._build_stability(X)
         first = self.runs_[0]

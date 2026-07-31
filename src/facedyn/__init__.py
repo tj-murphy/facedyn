@@ -31,7 +31,33 @@ from facedyn.nmf import (
 from facedyn.normalisation import ZScoreShiftNormalizer
 from facedyn.representative_aus import RepresentativeAUSelector, select_representative_aus
 from facedyn.smoothing import RollingSmoother
-from facedyn.splitting import group_train_test_split, paired_train_test_split
+from facedyn.classifiers import (
+    CLASSIFIER_NAMES,
+    fit_classifiers,
+    make_classifier,
+    make_classifiers,
+)
+from facedyn.evaluation import (
+    classification_metrics,
+    confusion_matrix_frame,
+    cross_validate_grouped,
+    delong_roc_test,
+    evaluate_models,
+    plot_accuracy_comparison,
+    plot_confusion_matrix,
+    plot_decision_boundary,
+    plot_probability_distributions,
+    plot_roc_curves,
+    roc_auc_delong_ci,
+)
+from facedyn.splitting import (
+    RepeatedStratifiedGroupKFold,
+    group_train_test_split,
+    pair_group_report,
+    pair_groups,
+    pair_groups_from_filenames,
+    paired_train_test_split,
+)
 
 __all__ = [
     "RollingSmoother",
@@ -63,6 +89,25 @@ __all__ = [
     "plot_feature_clusters",
     "group_train_test_split",
     "paired_train_test_split",
+    "pair_groups",
+    "pair_groups_from_filenames",
+    "pair_group_report",
+    "RepeatedStratifiedGroupKFold",
+    "CLASSIFIER_NAMES",
+    "make_classifier",
+    "make_classifiers",
+    "fit_classifiers",
+    "classification_metrics",
+    "confusion_matrix_frame",
+    "evaluate_models",
+    "roc_auc_delong_ci",
+    "delong_roc_test",
+    "cross_validate_grouped",
+    "plot_roc_curves",
+    "plot_confusion_matrix",
+    "plot_probability_distributions",
+    "plot_decision_boundary",
+    "plot_accuracy_comparison",
     "humanise_au_label",
     "humanise_au_labels",
 ]

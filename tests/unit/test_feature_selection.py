@@ -536,6 +536,38 @@ def test_selector_warns_on_a_single_run():
     assert selector.selected_columns_ == ["informative"]
 
 
+def test_selector_single_repeat_does_not_start_a_parallel_backend():
+    """A single repeat has nothing to parallelise across, and starting a
+    `loky` pool anyway deadlocked a Jupyter kernel (the worker's forest
+    also requests `n_jobs`). Single-run selection is what a nested
+    cross-validation loop does on every fold, so this path must stay
+    inline."""
+    frame = _selector_frame()
+    calls = []
+
+    def tracking_parallel(*args, **kwargs):
+        calls.append(kwargs)
+        raise AssertionError("Parallel must not be used for n_repeats=1")
+
+    import facedyn.feature_selection as module
+
+    original = module.Parallel
+    module.Parallel = tracking_parallel
+    try:
+        selector = BorutaSelector(
+            feature_columns=FEATURES, n_repeats=1, importance="gini",
+            n_estimators=50, random_state=0, n_jobs=-1,
+        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            selector.fit(frame, frame["isfakeorreal"])
+    finally:
+        module.Parallel = original
+
+    assert calls == []
+    assert len(selector.runs_) == 1
+
+
 def test_selector_rejects_a_non_positive_repeat_count():
     frame = _selector_frame()
     selector = BorutaSelector(feature_columns=FEATURES, n_repeats=0)
