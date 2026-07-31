@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from scipy.stats import binom
+from sklearn.ensemble import RandomForestClassifier
 
 from facedyn.feature_selection import (
     CONFIRMED,
@@ -22,6 +23,7 @@ from facedyn.feature_selection import (
     _boruta_run,
     _do_tests,
     _make_shadows,
+    _oob_indices,
     boruta_feature_stats,
     correlated_feature_clusters,
     gini_importance,
@@ -289,6 +291,79 @@ def test_boruta_run_confirmed_reports_rough_fixed_decisions_by_default():
 # --------------------------------------------------------------------------
 
 
+def test_oob_indices_match_sklearns_own_bootstrap():
+    """`_oob_indices` reproduces sklearn's bootstrap draw rather than
+    calling its private helper -- that helper's signature changed under us
+    and broke every permutation-importance call on newer scikit-learn.
+
+    Skipped rather than removed if the private function disappears: the
+    two behavioural tests below pin what actually matters without touching
+    sklearn internals, but while this import still works it is the
+    sharpest available check on divergence.
+    """
+    import inspect
+
+    sklearn_helper = pytest.importorskip("sklearn.ensemble._forest")
+    generate_unsampled = getattr(sklearn_helper, "_generate_unsampled_indices", None)
+    if generate_unsampled is None:
+        pytest.skip("sklearn no longer exposes _generate_unsampled_indices")
+
+    # The signature change that caused the original breakage: newer
+    # scikit-learn requires `sample_weight`. Adapt to whichever is present
+    # so this check keeps working across both.
+    parameters = inspect.signature(generate_unsampled).parameters
+    extra = {"sample_weight": None} if "sample_weight" in parameters else {}
+
+    for seed in (0, 1, 42, 12345):
+        expected = generate_unsampled(seed, 100, 100, **extra)
+        assert list(_oob_indices(seed, 100, 100)) == list(expected)
+
+
+def test_oob_indices_leave_out_the_expected_fraction():
+    """Sampling n of n with replacement leaves ~1/e ~ 36.8% unpicked. A
+    version-independent check that these really are bootstrap complements."""
+    fractions = [len(_oob_indices(seed, 500, 500)) / 500 for seed in range(20)]
+
+    assert 0.33 < np.mean(fractions) < 0.40
+
+
+def test_oob_indices_really_are_held_out_from_the_tree():
+    """The behavioural check that matters: an unrestricted tree memorises
+    its training data, so if these indices are genuinely out-of-bag its
+    accuracy on them must be clearly worse than on its in-bag samples. A
+    wrong (e.g. arbitrary) index set would collapse that gap."""
+    rng = np.random.default_rng(0)
+    n = 400
+    X = rng.normal(size=(n, 5))
+    y = (X[:, 0] + rng.normal(scale=2.0, size=n) > 0).astype(int)
+
+    forest = RandomForestClassifier(n_estimators=20, random_state=0).fit(X, y)
+    in_bag_scores, oob_scores = [], []
+    for tree in forest.estimators_:
+        oob = _oob_indices(tree.random_state, n, n)
+        in_bag = np.setdiff1d(np.arange(n), oob)
+        in_bag_scores.append(np.mean(tree.predict(X[in_bag]) == y[in_bag]))
+        oob_scores.append(np.mean(tree.predict(X[oob]) == y[oob]))
+
+    assert np.mean(in_bag_scores) > 0.95  # memorised its own training rows
+    assert np.mean(oob_scores) < 0.85  # but generalises far less well
+
+
+def test_correlated_feature_clusters_accepts_read_only_input():
+    """pandas 3 hands back read-only arrays from `.to_numpy()`, which broke
+    the in-place diagonal fill this used to do. Asserted directly so the
+    fix cannot regress on older pandas, where the array is writable and
+    the bug is invisible."""
+    frame = _correlated_frame()
+    values = frame.to_numpy()
+    values.flags.writeable = False
+    read_only = pd.DataFrame(values, columns=frame.columns, copy=False)
+
+    clusters = correlated_feature_clusters(read_only, threshold=0.9)
+
+    assert len(clusters) == len(frame.columns)
+
+
 def test_oob_permutation_importance_ranks_the_informative_feature_first():
     rng = np.random.default_rng(0)
     n = 200
@@ -505,6 +580,22 @@ def test_selector_transform_keeps_metadata_and_selected_columns():
 
     assert set(out.columns) == {"video_filename", "isfakeorreal", "informative"}
     assert len(out) == len(frame)
+
+
+def test_selector_transform_handles_nothing_clearing_the_threshold():
+    """"No feature is stable enough" is a real, correct outcome, not an
+    error case -- it is exactly what facedyn's own 31-feature set produces
+    on the Paper 1 training data. `transform` must return the metadata
+    columns and no features rather than raising."""
+    selector = _fit_selector(selection_threshold=1.01)
+    frame = _selector_frame()
+
+    out = selector.transform(frame)
+
+    assert selector.selected_columns_ == []
+    assert list(out.columns) == ["video_filename", "isfakeorreal"]
+    assert len(out) == len(frame)
+    assert list(selector.get_feature_names_out()) == []
 
 
 def test_selector_get_feature_names_out_matches_selected_columns():

@@ -27,6 +27,7 @@ the full investigation and the measured numbers.
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,7 +40,6 @@ from scipy.spatial.distance import squareform
 from scipy.stats import binom
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble._forest import _generate_unsampled_indices, _get_n_samples_bootstrap
 from sklearn.utils.validation import check_is_fitted, check_random_state
 
 from facedyn._plot_utils import save_figure
@@ -66,6 +66,60 @@ def _resolve_feature_columns(X: pd.DataFrame, feature_columns: list[str] | None)
     if feature_columns is not None:
         return list(feature_columns)
     return [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+
+
+def _writable_abs_correlation(X: pd.DataFrame, columns: list[str]) -> np.ndarray:
+    """Absolute correlation matrix as a writable array with a unit diagonal.
+
+    ``DataFrame.to_numpy()`` returns a **read-only** array under pandas 3,
+    so the diagonal fill below must not be applied to it in place. Going
+    through ``np.nan_to_num`` (which copies by default) yields a writable
+    array and simultaneously handles the ``NaN`` correlations a constant
+    column produces -- treating it as unrelated to everything rather than
+    letting ``NaN`` propagate into the linkage.
+    """
+    correlation = np.nan_to_num(X[columns].corr().abs().to_numpy(), nan=0.0)
+    np.fill_diagonal(correlation, 1.0)
+    return correlation
+
+
+def _n_bootstrap_samples(n_samples: int, max_samples) -> int:
+    """Bootstrap sample size for a forest, mirroring sklearn's own rule."""
+    if max_samples is None:
+        return n_samples
+    if isinstance(max_samples, (int, np.integer)):
+        return int(max_samples)
+    return max(round(n_samples * float(max_samples)), 1)
+
+
+def _oob_indices(tree_random_state, n_samples: int, n_bootstrap: int) -> np.ndarray:
+    """Indices *not* drawn into one tree's bootstrap sample.
+
+    Reproduces sklearn's own bootstrap draw -- seed the tree's
+    ``random_state`` and take ``randint(0, n_samples, n_bootstrap)`` -- and
+    returns the complement.
+
+    **Deliberately not `sklearn.ensemble._forest._generate_unsampled_indices`.**
+    Depending on that private helper broke exactly as private APIs do:
+    a scikit-learn release added a required ``sample_weight`` argument to
+    the neighbouring ``_get_n_samples_bootstrap``, and every
+    permutation-importance call raised ``TypeError`` on the newer version
+    while passing on the older one. Four lines reproducing a stable,
+    documented sampling scheme are the smaller liability.
+
+    The risk this trades into is silent divergence if sklearn ever changes
+    how it draws bootstrap samples, so
+    ``test_oob_indices_match_sklearns_own_bootstrap`` cross-checks against
+    the private helper whenever it is importable, and two further tests
+    pin the behaviour that actually matters (the ~36.8% out-of-bag
+    fraction, and in-bag accuracy exceeding out-of-bag accuracy) without
+    reference to sklearn internals at all.
+    """
+    rng = check_random_state(tree_random_state)
+    in_bag = rng.randint(0, n_samples, n_bootstrap)
+    mask = np.ones(n_samples, dtype=bool)
+    mask[in_bag] = False
+    return np.flatnonzero(mask)
 
 
 # --------------------------------------------------------------------------
@@ -143,7 +197,7 @@ def oob_permutation_importance(
     ).fit(X, y)
 
     n_samples, n_features = X.shape
-    n_bootstrap = _get_n_samples_bootstrap(n_samples, forest.max_samples)
+    n_bootstrap = _n_bootstrap_samples(n_samples, forest.max_samples)
     rng = check_random_state(random_state)
 
     # Trees are fitted on label indices into `forest.classes_`, so compare
@@ -152,10 +206,11 @@ def oob_permutation_importance(
 
     drops = np.zeros((len(forest.estimators_), n_features))
     for t, tree in enumerate(forest.estimators_):
-        oob = _generate_unsampled_indices(tree.random_state, n_samples, n_bootstrap)
+        oob = _oob_indices(tree.random_state, n_samples, n_bootstrap)
         if oob.size == 0:
             continue
-        # Fancy indexing copies, so this block is safe to permute in place.
+        # Fancy indexing copies, so this block is safe to permute in place
+        # even when `X` itself is read-only (as pandas 3 hands it over).
         X_oob = X[oob]
         y_oob = y_encoded[oob]
         baseline = np.mean(tree.predict(X_oob) == y_oob)
@@ -512,11 +567,7 @@ def correlated_feature_clusters(
         near-duplicate groups worth worrying about come first.
     """
     columns = _resolve_feature_columns(X, feature_columns)
-    correlation = X[columns].corr().abs().to_numpy()
-    # A constant column gives NaN correlations; treat it as unrelated to
-    # everything rather than letting NaN propagate through the linkage.
-    np.fill_diagonal(correlation, 1.0)
-    correlation = np.nan_to_num(correlation, nan=0.0)
+    correlation = _writable_abs_correlation(X, columns)
 
     if len(columns) < 2:
         labels = np.ones(len(columns), dtype=int)
@@ -1029,9 +1080,18 @@ def plot_boruta_importance(
     if ax is None:
         _, ax = plt.subplots(figsize=(8, 0.28 * len(data) + 1.5))
 
+    # `vert=False` was deprecated in matplotlib 3.11 (removal in 3.13) in
+    # favour of `orientation`, but `orientation` does not exist on the 3.7
+    # this package still supports -- so pick whichever the installed
+    # version accepts rather than pinning either.
+    horizontal = (
+        {"orientation": "horizontal"}
+        if "orientation" in inspect.signature(ax.boxplot).parameters
+        else {"vert": False}
+    )
     boxes = ax.boxplot(
-        data, vert=False, patch_artist=True, widths=0.6, showfliers=False,
-        medianprops={"color": "black"},
+        data, patch_artist=True, widths=0.6, showfliers=False,
+        medianprops={"color": "black"}, **horizontal,
     )
     for patch, colour in zip(boxes["boxes"], colours):
         patch.set_facecolor(colour)
@@ -1170,9 +1230,7 @@ def plot_feature_clusters(
     plt = _require_matplotlib("plot_feature_clusters")
 
     features = list(clusters["feature"])
-    correlation = X[features].corr().abs()
-    matrix = np.nan_to_num(correlation.to_numpy(), nan=0.0)
-    np.fill_diagonal(matrix, 1.0)
+    matrix = _writable_abs_correlation(X, features)
 
     # Order within the heatmap by the dendrogram, not just by cluster id,
     # so blocks read as blocks even where a cut split a broader family.
