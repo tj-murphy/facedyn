@@ -282,7 +282,7 @@ def test_repeated_grouped_cv_never_splits_a_pair():
         assert not set(groups[train_idx]) & set(groups[test_idx])
 
 
-def test_repeated_grouped_cv_repeats_differ_but_are_deterministic():
+def test_repeated_grouped_cv_is_deterministic_for_a_given_seed():
     df = make_video_level_df()
     groups = pair_groups(df)
     y = (df["isfakeorreal"] == "real").to_numpy()
@@ -294,10 +294,48 @@ def test_repeated_grouped_cv_repeats_differ_but_are_deterministic():
         assert np.array_equal(train_a, train_b)
         assert np.array_equal(test_a, test_b)
 
-    # The three repeats are not the same five folds over again.
-    first_repeat = {tuple(test) for _, test in folds_a[:5]}
-    second_repeat = {tuple(test) for _, test in folds_a[5:10]}
-    assert first_repeat != second_repeat
+
+def test_repeated_grouped_cv_repeats_are_genuinely_different_partitions():
+    """Each repeat must re-partition the data, or `n_repeats` buys nothing.
+
+    This is not automatic. `StratifiedGroupKFold(shuffle=True)` up to
+    scikit-learn 1.7 shuffles the per-group class-count matrix without the
+    group identities attached, so on a balanced matched-pairs design --
+    every group contributing one real and one fake -- every seed returns
+    identical folds. `RepeatedStratifiedGroupKFold` therefore randomises
+    the group order itself; this test fails if that is ever dropped in
+    favour of delegating to `shuffle`.
+    """
+    df = make_video_level_df()
+    groups = pair_groups(df)
+    y = (df["isfakeorreal"] == "real").to_numpy()
+
+    folds = list(
+        RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=3, random_state=0)
+        .split(df[["feature"]], y, groups)
+    )
+    partitions = [
+        frozenset(frozenset(test.tolist()) for _, test in folds[i:i + 5])
+        for i in (0, 5, 10)
+    ]
+
+    assert len(set(partitions)) == 3
+    # Every repeat still covers every sample exactly once across its folds.
+    for partition in partitions:
+        assert sorted(i for fold in partition for i in fold) == list(range(len(df)))
+
+
+def test_repeated_grouped_cv_folds_stay_balanced_and_stratified():
+    df = make_video_level_df(n_pairs=25)
+    groups = pair_groups(df)
+    y = (df["isfakeorreal"] == "real").to_numpy()
+
+    for _, test_idx in RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=2,
+                                                    random_state=0).split(
+        df[["feature"]], y, groups
+    ):
+        assert len(test_idx) == pytest.approx(len(df) / 5, abs=4)
+        assert y[test_idx].mean() == pytest.approx(0.5, abs=0.2)
 
 
 def test_repeated_grouped_cv_requires_groups():

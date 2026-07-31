@@ -180,11 +180,42 @@ def test_stability_shows_rs_published_eight_do_not_reproduce(stability_selector)
 
 
 def test_stability_keeps_the_one_genuinely_stable_feature(stability_selector):
+    """`diff1x_pacf5_AU17_chin_raiser` stands alone at the top.
+
+    **What this asserts, and why it is not a selection-frequency
+    threshold.** An earlier version required ``selection_freq >= 0.8``,
+    which is the shipped default's value and was never chosen with any
+    backing -- and the frequency is not stable enough to carry that
+    weight. Measured on this exact fixture, the same feature comes first
+    on both scikit-learn versions but at very different levels, because
+    the two draw random-forest bootstraps differently:
+
+    | scikit-learn | top feature | runner-up |
+    |---|---|---|
+    | 1.7.2 | 0.750 (6/8 runs) | 0.250 |
+    | 1.8.0 | 1.000 (8/8 runs) | 0.500 |
+
+    What survives both is the *ranking* and the *margin*: first place, a
+    clear majority of runs, and a lead of 2-3x over whatever is second.
+    Those are the claims PIPELINE.md actually makes about this feature, so
+    those are what is pinned here. The 2x multiplier below is the lower of
+    the two observed margins -- an observed floor, not a principled
+    constant, and worth re-measuring rather than trusting if it ever
+    fails.
+    """
     top = stability_selector.stability_.iloc[0]
+    runner_up = stability_selector.stability_.iloc[1]
 
     assert top["feature"] == "diff1x_pacf5_AU17_chin_raiser"
-    assert top["selection_freq"] >= 0.8
-    assert "diff1x_pacf5_AU17_chin_raiser" in stability_selector.selected_columns_
+    assert top["selection_freq"] > 0.5, "not even confirmed more often than not"
+    assert top["selection_freq"] >= 2 * runner_up["selection_freq"], (
+        f"expected a clear lead, got {top['selection_freq']} against "
+        f"{runner_up['feature']} at {runner_up['selection_freq']}"
+    )
+    # Whatever the default threshold does keep, it is only ever this one
+    # feature -- the finding behind PIPELINE.md's warning that 0.8 is too
+    # strict for a signal this weak.
+    assert set(stability_selector.selected_columns_) <= {"diff1x_pacf5_AU17_chin_raiser"}
 
 
 def test_cluster_stability_never_understates_its_members(stability_selector):

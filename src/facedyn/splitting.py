@@ -436,12 +436,28 @@ class RepeatedStratifiedGroupKFold(BaseCrossValidator):
     repeats=3)`` implies on paired data. scikit-learn ships
     :class:`~sklearn.model_selection.StratifiedGroupKFold` and
     :class:`~sklearn.model_selection.RepeatedStratifiedKFold` but nothing
-    that is both, so this composes them: each repeat is an independently
-    shuffled `StratifiedGroupKFold`.
+    that is both, so this composes them: each repeat runs
+    `StratifiedGroupKFold` over an independently randomised group order.
 
     ``groups`` is **required**. Passing group ids is the whole point of the
     class, and a silent fallback to ungrouped folds is exactly the failure
     this exists to prevent (see :func:`pair_groups`).
+
+    Notes
+    -----
+    The repeats are randomised **here** rather than by delegating to
+    `StratifiedGroupKFold`'s own ``shuffle``, because that argument does
+    nothing on precisely this package's data. Up to scikit-learn 1.7 it
+    shuffles the per-group *class-count matrix* without carrying the
+    group identities along; on a balanced matched-pairs design every
+    group contributes the same counts (one real, one fake), so shuffling
+    rows of an array of identical rows changes nothing and every seed
+    returns identical folds. scikit-learn 1.8 shuffles a permutation
+    array instead and does vary. Rather than behave differently by
+    version, each repeat here relabels the groups through its own random
+    permutation -- which drives the greedy assignment order on every
+    version -- and asks for ``shuffle=False``. Verified to give distinct,
+    balanced, still-pair-respecting partitions on both 1.7.2 and 1.8.0.
 
     Parameters
     ----------
@@ -480,13 +496,20 @@ class RepeatedStratifiedGroupKFold(BaseCrossValidator):
         if y is None:
             raise ValueError("RepeatedStratifiedGroupKFold requires y to stratify on.")
 
+        groups = np.asarray(groups)
+        unique_groups = np.unique(groups)
+        codes = np.searchsorted(unique_groups, groups)
+
         rng = check_random_state(self.random_state)
         seeds = rng.randint(np.iinfo(np.int32).max, size=self.n_repeats)
         for seed in seeds:
-            splitter = StratifiedGroupKFold(
-                n_splits=self.n_splits, shuffle=True, random_state=int(seed)
-            )
-            yield from splitter.split(X, y, groups)
+            # Relabelling is a bijection on the group ids, so which rows
+            # share a group is untouched -- only the order the greedy
+            # assignment meets them in changes. See the class Notes for
+            # why this is not left to `shuffle=True`.
+            relabelled = check_random_state(int(seed)).permutation(len(unique_groups))[codes]
+            splitter = StratifiedGroupKFold(n_splits=self.n_splits, shuffle=False)
+            yield from splitter.split(X, y, relabelled)
 
     def _iter_test_indices(self, X=None, y=None, groups=None):
         # BaseCrossValidator's default `split` builds folds from this hook;
