@@ -34,6 +34,9 @@ from facedyn.splitting import pair_groups, paired_train_test_split
 AU_COLUMNS = ["AU01_r", "AU06_r", "AU12_r", "AU17_r"]
 N_FRAMES = 40
 
+#: 18 s: runs every stage of the pipeline twice. Skipped unless `pytest --runslow`; always run in CI.
+pytestmark = pytest.mark.slow
+
 
 def make_frame_level_data(n_pairs: int = 32, seed: int = 0) -> pd.DataFrame:
     """Frame-level AU data for `n_pairs` matched real/fake video pairs.

@@ -662,29 +662,49 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
     n_repeats : int, default 20
         How many independently seeded Boruta runs to perform. ``1``
         reproduces R's single-run procedure and warns.
-    selection_threshold : float, default 0.8
+    selection_threshold : float, default 0.5
         Fraction of runs in which a feature must be confirmed (after
         tentative rough fix) to be kept by `transform`. Ignored when
         ``n_repeats=1``, where any confirmed feature is kept.
 
-        **This choice matters more than anything else in this class, and
-        the default is conservative rather than optimal.** Measured on
-        Paper 1's real data against its genuinely held-out 94-video test
-        set: ``0.8`` keeps 1 feature scoring **0.547** ROC-AUC (near
-        chance), while ``0.5`` keeps 4 scoring **0.710** and ``0.25``
-        keeps 8 scoring **0.710** -- the latter two matching the 0.706 of
-        the 8 features the paper published. Requiring 80% of runs is too
-        strict for a weak signal, and on that dataset the default would
-        have produced a worse result than no stability selection at all.
+        **This choice matters more than anything else in this class.**
+        The default was ``0.8`` until 2026-08-03, on the reasoning that it
+        is the honest reading of "confirmed in the large majority of
+        runs". It was lowered after :mod:`facedyn.tuning` made it possible
+        to sweep the threshold on data held out of *training*, rather than
+        on the held-out test set that had been the only evidence
+        available. On Paper 1's 370 videos, three sub-train/validation
+        splits agreeing on the shape of the curve:
 
-        The default stays at 0.8 because it is the honest reading of
-        "confirmed in the large majority of runs", and because the
-        thresholds that performed better there were identified *using
-        that test set* -- which is not information a user starting out
-        has. Treat the threshold as a decision to justify (ideally
-        against held-out data), not a default to accept, and read
+        | threshold | features | validation ROC-AUC |
+        |---|---|---|
+        | 0.00 (no selection) | 108 | 0.639 |
+        | 0.05 | 9 | 0.637 |
+        | 0.25 | 4.3 | 0.560 |
+        | 0.50 | 3.0 | 0.574 |
+        | **0.80** | 1.7 | **0.548** |
+
+        So ``0.8`` is the worst scoring region of the curve short of
+        selecting nothing at all -- and that is now known without spending
+        the test set. Scored on the untouched 94 afterwards, it keeps one
+        feature at **0.548** ROC-AUC where ``0.5`` keeps six at **0.734**.
+
+        **``0.5`` is not simply the curve's argmax, and should not be read
+        as an optimum.** The tuner's own answer on that data was ``0.05``,
+        which is biased low for a reason worth knowing: the selector
+        inside the loop sees 296 videos where the final fit sees 370, so
+        the same threshold keeps fewer features inside than out (at
+        ``0.5``, 2-4 inner against 6 on the refit). The default is
+        ``0.5`` because it is a principled value -- confirmed in a
+        majority of runs -- that the evidence puts on the right side of
+        the one clear finding, that the strict end is too strict for a
+        weak signal.
+
+        Treat it as a decision to justify rather than a default to
+        accept. :func:`facedyn.tuning.tune_selection_threshold` is the
+        way to justify it on your own data; failing that, read
         ``stability_``'s frequency ranking before committing to any
-        cut-off: the ranking is the dependable output here, not the
+        cut-off, since the ranking is the dependable output here, not the
         binary keep/drop it induces.
     importance : {"permutation", "gini"} or callable, default "permutation"
         Importance backend. ``"permutation"`` is
@@ -748,7 +768,7 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
         self,
         feature_columns: list[str] | None = None,
         n_repeats: int = 20,
-        selection_threshold: float = 0.8,
+        selection_threshold: float = 0.5,
         importance="permutation",
         n_estimators: int = 500,
         alpha: float = 0.01,

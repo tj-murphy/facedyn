@@ -26,7 +26,10 @@ jobs:
         run: pip install -e ".[dev,viz]"
 
       - name: Run tests
-        run: pytest -v
+        # --runslow is required: `pytest` alone skips the expensive tests
+        # (Boruta fits, imputation, rpy2) so the local edit loop stays in
+        # seconds. CI is where they have to run.
+        run: pytest -v --runslow
 
   core-import:
     name: Core import (no optional extras)
@@ -61,5 +64,6 @@ jobs:
           import facedyn.representative_aus
           import facedyn.smoothing
           import facedyn.splitting
+          import facedyn.tuning
           print('facedyn core imports cleanly with no optional dependencies')
           "

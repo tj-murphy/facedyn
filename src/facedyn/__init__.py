@@ -50,6 +50,13 @@ from facedyn.evaluation import (
     plot_roc_curves,
     roc_auc_delong_ci,
 )
+from facedyn.tuning import (
+    ThresholdTuningResult,
+    plot_threshold_sweep,
+    threshold_grid,
+    threshold_sweep,
+    tune_selection_threshold,
+)
 from facedyn.splitting import (
     RepeatedStratifiedGroupKFold,
     group_train_test_split,
@@ -103,6 +110,11 @@ __all__ = [
     "roc_auc_delong_ci",
     "delong_roc_test",
     "cross_validate_grouped",
+    "tune_selection_threshold",
+    "threshold_sweep",
+    "threshold_grid",
+    "ThresholdTuningResult",
+    "plot_threshold_sweep",
     "plot_roc_curves",
     "plot_confusion_matrix",
     "plot_probability_distributions",

@@ -59,10 +59,14 @@ INPUT_PATH = FIXTURES_DIR / "r_optimal_k_input.csv"
 ACTIVATIONS_PATH = FIXTURES_DIR / "r_NMF.csv"
 BASIS_PATH = FIXTURES_DIR / "r_model_nmf_w.csv"
 
-pytestmark = pytest.mark.skipif(
-    not (INPUT_PATH.exists() and ACTIVATIONS_PATH.exists() and BASIS_PATH.exists()),
-    reason="R Validation Data/*.csv not available locally",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not (INPUT_PATH.exists() and ACTIVATIONS_PATH.exists() and BASIS_PATH.exists()),
+        reason="R Validation Data/*.csv not available locally",
+    ),
+    # 9 s: NMF fits matched against RcppML's by Hungarian assignment. Skipped unless `pytest --runslow`; always run in CI.
+    pytest.mark.slow,
+]
 
 
 def _assert_matched_components(py_matrix: np.ndarray, r_matrix: np.ndarray, residual_tol: float):

@@ -38,9 +38,14 @@ from facedyn.feature_selection import (
 
 DATA_PATH = Path(__file__).parents[2] / "R Validation Data" / "r_cmfts_output_imputed_zerosd.csv"
 
-pytestmark = pytest.mark.skipif(
-    not DATA_PATH.exists(), reason="r_cmfts_output_imputed_zerosd.csv not available locally"
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not DATA_PATH.exists(),
+        reason="r_cmfts_output_imputed_zerosd.csv not available locally",
+    ),
+    # 339 s: twenty-seed Boruta fits on the real 108-feature table. Skipped unless `pytest --runslow`; always run in CI.
+    pytest.mark.slow,
+]
 
 METADATA_COLUMNS = ["video_filename", "isfakeorreal", "emotion", "valence"]
 
@@ -170,6 +175,10 @@ def test_stability_shows_rs_published_eight_do_not_reproduce(stability_selector)
     frequencies = stability_selector.selection_frequency_
     published = {f: frequencies[f] for f in R_SELECTED_FEATURES}
 
+    # 0.8 here is a fixed reference level for "confirmed in the large
+    # majority of runs", not the shipped default -- that moved to 0.5 on
+    # 2026-08-03. The claim under test is about R's eight features, so it
+    # should not move when a package default does.
     survivors = [f for f, freq in published.items() if freq >= 0.8]
     assert len(survivors) <= 3, (
         f"expected almost none of R's 8 to survive reseeding, got {survivors} "
@@ -212,10 +221,17 @@ def test_stability_keeps_the_one_genuinely_stable_feature(stability_selector):
         f"expected a clear lead, got {top['selection_freq']} against "
         f"{runner_up['feature']} at {runner_up['selection_freq']}"
     )
-    # Whatever the default threshold does keep, it is only ever this one
-    # feature -- the finding behind PIPELINE.md's warning that 0.8 is too
-    # strict for a signal this weak.
-    assert set(stability_selector.selected_columns_) <= {"diff1x_pacf5_AU17_chin_raiser"}
+    # Whatever the shipped default keeps here, this feature is in it and
+    # leads it. Asserted as membership rather than as the whole of
+    # `selected_columns_`: the default moved from 0.8 to 0.5 on 2026-08-03
+    # (see PIPELINE.md "Step 8b"), and on scikit-learn 1.8 the runner-up
+    # sits exactly at 0.5, so what else comes along is a property of the
+    # threshold rather than of this fixture.
+    assert "diff1x_pacf5_AU17_chin_raiser" in stability_selector.selected_columns_
+    assert all(
+        stability_selector.selection_frequency_[f] <= top["selection_freq"]
+        for f in stability_selector.selected_columns_
+    )
 
 
 def test_cluster_stability_never_understates_its_members(stability_selector):

@@ -34,6 +34,9 @@ from facedyn.feature_selection import (
     tentative_rough_fix,
 )
 
+#: 58 s: every test here fits Boruta at least once. Skipped unless `pytest --runslow`; always run in CI.
+pytestmark = pytest.mark.slow
+
 
 def constant_importance(values):
     """An importance function returning fixed per-column values.

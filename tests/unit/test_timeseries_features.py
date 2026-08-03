@@ -58,6 +58,7 @@ def test_distribution_features_match_their_definitions(noise):
     assert result["kurtosis"] == pytest.approx(stats.kurtosis(noise))
 
 
+@pytest.mark.slow  # 18 s: draws a large sample to pin the excess-kurtosis convention
 def test_kurtosis_is_excess_so_normal_data_sits_near_zero():
     x = np.random.default_rng(3).normal(size=20000)
     assert extract_features(x)["kurtosis"] == pytest.approx(0, abs=0.1)

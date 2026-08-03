@@ -114,6 +114,7 @@ def test_callable_extractor_reports_feature_names_out():
     assert list(extractor.get_feature_names_out()) == ["total", "n"]
 
 
+@pytest.mark.slow  # 6 s: starts a joblib pool
 def test_callable_extractor_parallel_matches_serial():
     wide = make_wide(n_rows=4)
 

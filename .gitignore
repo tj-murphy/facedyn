@@ -51,6 +51,9 @@ session-summaries/
 # which released a new version with rank selection stuff after I last used it.
 r_rank_selection/
 
+# Threshold-tuning run outputs (derived from the gitignored R data above)
+tools/threshold_tuning/
+
 # Diagnosis scripts
 # Mainly to debug python stuff
 diagnose*

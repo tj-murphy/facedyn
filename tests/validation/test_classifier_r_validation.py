@@ -42,10 +42,14 @@ DATA_DIR = Path(__file__).parents[2] / "R Validation Data"
 TRAIN_PATH = DATA_DIR / "r_cmfts_output_imputed_zerosd.csv"
 TEST_PATH = DATA_DIR / "r_cmfts_output_imputed_zerosd_test.csv"
 
-pytestmark = pytest.mark.skipif(
-    not (TRAIN_PATH.exists() and TEST_PATH.exists()),
-    reason="R CMFTS train/test exports not available locally",
-)
+pytestmark = [
+    pytest.mark.skipif(
+        not (TRAIN_PATH.exists() and TEST_PATH.exists()),
+        reason="R CMFTS train/test exports not available locally",
+    ),
+    # 11 s: grouped-CV comparisons on the real training set. Skipped unless `pytest --runslow`; always run in CI.
+    pytest.mark.slow,
+]
 
 METADATA_COLUMNS = ["video_filename", "isfakeorreal", "emotion", "valence"]
 
