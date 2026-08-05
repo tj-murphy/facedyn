@@ -1,4 +1,5 @@
 from facedyn.au_labels import humanise_au_label, humanise_au_labels
+from facedyn.face_maps import plot_nmf_face_maps
 from facedyn.feature_selection import (
     BorutaRun,
     BorutaSelector,
@@ -122,4 +123,5 @@ __all__ = [
     "plot_accuracy_comparison",
     "humanise_au_label",
     "humanise_au_labels",
+    "plot_nmf_face_maps",
 ]

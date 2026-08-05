@@ -26,10 +26,6 @@ env/
 .vscode/
 .idea/
 
-# Notebooks
-.ipynb_checkpoints/
-notebooks/
-
 # Outdated code, not relevant to facedyn
 cmfts_port/
 
@@ -44,9 +40,6 @@ PROJECT_STRUCTURE.md
 DATA_FORMAT.md
 EXTERNAL_FILE_*
 
-# Session summaries
-session-summaries/
-
 # R code - this is mainly for testing the new version of RccpML
 # which released a new version with rank selection stuff after I last used it.
 r_rank_selection/
@@ -60,3 +53,6 @@ diagnose*
 diagnose.py
 face_maps_*
 smoothing_diagnostic.png
+
+# Other
+_*/

@@ -70,8 +70,8 @@ pytest              # fast tests, ~15 s
 pytest --runslow    # everything, including Boruta and R validation, ~5 min
 ```
 
-`pytest` skips tests marked `slow` — Boruta fits, `missForest`-equivalent
-imputation, the rpy2 bridge — so the edit loop stays in seconds. CI runs
+`pytest` skips tests marked `slow` (Boruta fits, `missForest`-equivalent
+imputation, the rpy2 bridge) so the edit loop stays in seconds. CI runs
 `--runslow`, so nothing is exempt from gating a push. The suite leaves two
 cores free on machines with more than four, since several tests ask for
 `n_jobs=-1`; add `nice -n 19` for a full run you want to forget about.
