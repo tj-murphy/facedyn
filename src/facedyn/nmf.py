@@ -15,6 +15,7 @@ from sklearn.decomposition import NMF
 from sklearn.utils.validation import check_is_fitted
 
 from facedyn._plot_utils import save_figure
+from facedyn.au_labels import humanise_au_label
 
 
 def _resolve_columns(
@@ -831,6 +832,7 @@ def plot_nmf_reconstruction(
     video_id=None,
     group_col: str = "video_filename",
     frame_col: str = "frame",
+    au_label: str | None = None,
     ax=None,
     save_path: str | Path | None = None,
     output_dir: str | Path = ".",
@@ -860,6 +862,11 @@ def plot_nmf_reconstruction(
         Column identifying which rows belong to which video.
     frame_col : str, default "frame"
         Column used for the x-axis.
+    au_label : str, optional
+        Display name for `au` in the y-axis label and title. `au` itself
+        still selects the column, so passing a humanised label (e.g. via
+        :func:`facedyn.humanise_au_label`) doesn't affect what's plotted,
+        only how it's captioned. Defaults to `au` unchanged.
     ax : matplotlib.axes.Axes, optional
         Axes to draw on. A new figure/axes is created if not given.
     save_path : str or pathlib.Path, optional
@@ -886,6 +893,8 @@ def plot_nmf_reconstruction(
         au = decomposer.columns_[0]
     if video_id is None:
         video_id = X[group_col].iloc[0]
+    if au_label is None:
+        au_label = au
 
     original, reconstructed = _reconstruct(decomposer, X)
     au_idx = decomposer.columns_.index(au)
@@ -905,8 +914,12 @@ def plot_nmf_reconstruction(
         color="#D55E00", linewidth=1.5, label="Reconstructed",
     )
     ax.set_xlabel(frame_col)
-    ax.set_ylabel(au)
-    ax.set_title(f"{au} - Original vs. Reconstructed ({video_id})")
+    ax.set_ylabel(au_label)
+    # Two lines plus `wrap`: a long AU label and/or video_id easily overflow
+    # a single line, and `wrap` catches whatever the explicit split doesn't.
+    ax.set_title(
+        f"{au_label}\nOriginal vs. Reconstructed ({video_id})", fontsize=9, wrap=True,
+    )
     ax.legend()
     save_figure(ax.figure, save_path, output_dir, dpi)
     return ax
@@ -919,6 +932,7 @@ def plot_nmf_reconstruction_extremes(
     group_col: str = "video_filename",
     frame_col: str = "frame",
     r2_table: pd.DataFrame | None = None,
+    humanise: bool = False,
     ax=None,
     save_path: str | Path | None = None,
     output_dir: str | Path = ".",
@@ -949,6 +963,11 @@ def plot_nmf_reconstruction_extremes(
     r2_table : pd.DataFrame, optional
         Output of :func:`nmf_reconstruction_r2_per_au` for `decomposer`/`X`,
         to reuse instead of recomputing it here.
+    humanise : bool, default False
+        Caption each subplot with :func:`facedyn.humanise_au_label` instead
+        of the raw column name (e.g. ``"AU07 - Lid Tightener"`` instead of
+        ``"smth_AU07_r"``). Only affects the label; which AU is selected as
+        best/worst is unchanged.
     ax : sequence of matplotlib.axes.Axes, optional
         Two Axes (best, worst) to draw on. A new ``1 x 2`` grid is created
         if not given.
@@ -982,18 +1001,20 @@ def plot_nmf_reconstruction_extremes(
         video_id = X[group_col].iloc[0]
 
     if ax is None:
-        _, axes = plt.subplots(1, 2, figsize=(9, 4))
+        _, axes = plt.subplots(1, 2, figsize=(11, 4.5))
     else:
         axes = np.atleast_1d(ax)
         if len(axes) != 2:
             raise ValueError(f"ax must have 2 entries, got {len(axes)}.")
 
     for target_ax, au, role in zip(axes, [best_au, worst_au], ["Best", "Worst"]):
+        au_label = humanise_au_label(au) if humanise else au
         plot_nmf_reconstruction(
             decomposer, X, au=au, video_id=video_id,
-            group_col=group_col, frame_col=frame_col, ax=target_ax,
+            group_col=group_col, frame_col=frame_col, au_label=au_label, ax=target_ax,
         )
-        target_ax.set_title(f"{role}: {target_ax.get_title()}")
+        title = target_ax.get_title()
+        target_ax.set_title(f"{role}: {title}", fontsize=9, wrap=True)
 
     save_figure(axes[0].figure, save_path, output_dir, dpi)
     return list(axes)

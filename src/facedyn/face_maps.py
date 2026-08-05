@@ -435,6 +435,7 @@ def plot_nmf_face_maps(
     normalize: bool = True,
     cmap: str = "Blues",
     alpha: float = 1.0,
+    full_range: bool = False,
     warn_unmapped: bool = True,
     save_path: str | Path | None = None,
     output_dir: str | Path = ".",
@@ -463,17 +464,27 @@ def plot_nmf_face_maps(
         components are not comparable. Set to False to use
         ``decomposer.components_`` unmodified, but note that values outside
         ``[0, 1]`` push the deformation model beyond its training range and
-        saturate every region to the same colour.
+        are clipped to ``[0, 1]`` for shading, saturating every such region
+        to the same colour.
     cmap : str, default "Blues"
         Matplotlib colormap name. Colours are looked up at
         ``int(value * 100) / 150`` to match py-feat's quantised palette, so
         a fully loaded region renders at about 67% of the colormap's range
-        rather than its darkest end.
+        rather than its darkest end. See `full_range` to use the colormap's
+        full range instead.
     alpha : float, default 1.0
         Multiplier on region opacity, which is ``value * alpha``. At the
         default this matches py-feat, where a barely-loaded region fades
         toward transparent. Set below 1.0 to dim every region uniformly,
         which helps where overlapping regions hide each other.
+    full_range : bool, default False
+        Use the colormap's full ``[0, 1]`` range instead of py-feat's own
+        capped-at-67% quantised palette, so a fully loaded region reaches
+        the colormap's darkest end -- matching
+        :func:`facedyn.nmf.plot_nmf_basis_heatmap`'s color scale for the
+        same underlying value. The default (False) replicates py-feat's
+        own rendering exactly; set to True to compare face maps directly
+        against the basis-matrix heatmap.
     warn_unmapped : bool, default True
         Warn once listing AU columns with no facial region in this style.
         Their loading still affects face shape through the deformation
@@ -544,9 +555,11 @@ def plot_nmf_face_maps(
             value = 0.0
             if au_code is not None and au_code in au_codes:
                 value = basis[au_codes.index(au_code), component_idx]
+            value = float(np.clip(value, 0.0, 1.0))
+            color_value = value if full_range else int(value * 100) / 150
             component_ax.add_patch(
                 Polygon(
-                    vertices, facecolor=colormap(int(value * 100) / 150), edgecolor="none",
+                    vertices, facecolor=colormap(color_value), edgecolor="none",
                     alpha=value * alpha, zorder=1,
                 )
             )
