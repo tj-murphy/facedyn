@@ -66,9 +66,8 @@ def labels_from_counts(
         + ["real"] * predicted_fake_truly_real
         + ["fake"] * predicted_fake_truly_fake
     )
-    y_pred = (
-        ["real"] * (predicted_real_truly_real + predicted_real_truly_fake)
-        + ["fake"] * (predicted_fake_truly_real + predicted_fake_truly_fake)
+    y_pred = ["real"] * (predicted_real_truly_real + predicted_real_truly_fake) + ["fake"] * (
+        predicted_fake_truly_real + predicted_fake_truly_fake
     )
     return np.array(y_true), np.array(y_pred)
 
@@ -174,8 +173,16 @@ def test_agreement_and_mcnemar_statistics_match_r(published):
 
 @pytest.mark.parametrize(
     "statistic",
-    ["sensitivity", "specificity", "ppv", "npv",
-     "detection_rate", "detection_prevalence", "balanced_accuracy", "f1"],
+    [
+        "sensitivity",
+        "specificity",
+        "ppv",
+        "npv",
+        "detection_rate",
+        "detection_prevalence",
+        "balanced_accuracy",
+        "f1",
+    ],
 )
 def test_class_statistics_match_r(published, statistic):
     expected, metrics = published

@@ -22,11 +22,13 @@ from facedyn.features.external import (
 
 def make_wide(n_rows: int = 3, n_frames: int = 10) -> pd.DataFrame:
     rng = np.random.default_rng(0)
-    return pd.DataFrame({
-        "video_filename": [f"v{i}" for i in range(n_rows)],
-        "series": ["smth_AU01_r"] * n_rows,
-        **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
-    })
+    return pd.DataFrame(
+        {
+            "video_filename": [f"v{i}" for i in range(n_rows)],
+            "series": ["smth_AU01_r"] * n_rows,
+            **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
+        }
+    )
 
 
 # --------------------------------------------------------------------------
@@ -100,9 +102,7 @@ def test_callable_extractor_carries_metadata_and_appends_features():
 def test_callable_extractor_labels_unnamed_output_via_feature_names():
     wide = make_wide()
 
-    result = CallableFeatureExtractor(
-        _stub_bare, feature_names=["total", "n"]
-    ).fit_transform(wide)
+    result = CallableFeatureExtractor(_stub_bare, feature_names=["total", "n"]).fit_transform(wide)
 
     assert list(result.columns) == ["video_filename", "series", "total", "n"]
 

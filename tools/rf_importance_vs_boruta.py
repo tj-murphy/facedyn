@@ -76,9 +76,7 @@ def main() -> None:
 
     memory = Memory(location=str(NOTEBOOKS / ".joblib_cache"), verbose=0)
     cached = memory.cache(fit_boruta_selector)
-    selector = cached(
-        cmfts, features, cmfts["isfakeorreal"], RANDOM_STATE, 20, SELECTION_THRESHOLD
-    )
+    selector = cached(cmfts, features, cmfts["isfakeorreal"], RANDOM_STATE, 20, SELECTION_THRESHOLD)
     boruta_freq = selector.selection_frequency_
     boruta_set = selector.selected_columns_
     print(f"Boruta at >= {SELECTION_THRESHOLD}: {len(boruta_set)} features")
@@ -104,22 +102,29 @@ def main() -> None:
     # comparison of how many features each method was asked for.
     freq_matched = top_k_frequency(max(1, len(boruta_set)))
 
-    frame = pd.DataFrame({
-        "feature": features,
-        "boruta_freq": [boruta_freq[f] for f in features],
-        "rf_top8_freq": [freq_top8[f] for f in features],
-        f"rf_top{max(1, len(boruta_set))}_freq": [freq_matched[f] for f in features],
-        "in_paper_8": [f in PAPER_8 for f in features],
-    }).sort_values("boruta_freq", ascending=False)
+    frame = pd.DataFrame(
+        {
+            "feature": features,
+            "boruta_freq": [boruta_freq[f] for f in features],
+            "rf_top8_freq": [freq_top8[f] for f in features],
+            f"rf_top{max(1, len(boruta_set))}_freq": [freq_matched[f] for f in features],
+            "in_paper_8": [f in PAPER_8 for f in features],
+        }
+    ).sort_values("boruta_freq", ascending=False)
     OUT.mkdir(parents=True, exist_ok=True)
     frame.to_csv(OUT / "rf_vs_boruta.csv", index=False)
 
     # --- held-out scoring, averaged over model seeds --------------------
     def probs(cols, seeds=(0, 1, 2, 3, 4)):
-        return np.mean([
-            RandomForestClassifier(500, random_state=s, n_jobs=6)
-            .fit(cmfts[cols], y).predict_proba(test[cols])[:, 1] for s in seeds
-        ], axis=0)
+        return np.mean(
+            [
+                RandomForestClassifier(500, random_state=s, n_jobs=6)
+                .fit(cmfts[cols], y)
+                .predict_proba(test[cols])[:, 1]
+                for s in seeds
+            ],
+            axis=0,
+        )
 
     rf_top8_stable = [f for f, v in freq_top8.items() if v >= 0.5]
     rf_top8_seed0 = [features[i] for i in rankings[0][:8]]
@@ -137,14 +142,16 @@ def main() -> None:
         if not cols:
             continue
         auc, lo, hi = roc_auc_delong_ci(y_test, scored[name])
-        rows.append({
-            "feature set": name,
-            "n": len(cols),
-            "test ROC-AUC": round(auc, 3),
-            "ci_lo": round(lo, 3),
-            "ci_hi": round(hi, 3),
-            "overlap with Paper 8": len(set(cols) & set(PAPER_8)),
-        })
+        rows.append(
+            {
+                "feature set": name,
+                "n": len(cols),
+                "test ROC-AUC": round(auc, 3),
+                "ci_lo": round(lo, 3),
+                "ci_hi": round(hi, 3),
+                "overlap with Paper 8": len(set(cols) & set(PAPER_8)),
+            }
+        )
     held_out = pd.DataFrame(rows)
     held_out.to_csv(OUT / "rf_vs_boruta_heldout.csv", index=False)
 
@@ -169,9 +176,7 @@ def main() -> None:
         "elapsed_min": round((time.time() - started) / 60, 1),
     }
     if "boruta >= 0.5" in scored and "RF top-8, majority of seeds" in scored:
-        t = delong_roc_test(
-            y_test, scored["boruta >= 0.5"], scored["RF top-8, majority of seeds"]
-        )
+        t = delong_roc_test(y_test, scored["boruta >= 0.5"], scored["RF top-8, majority of seeds"])
         summary["delong_boruta_vs_rf_top8"] = {
             "difference": round(float(t["difference"]), 3),
             "p_value": round(float(t["p_value"]), 3),
@@ -184,8 +189,7 @@ def main() -> None:
     print("\n--- held out ---")
     print(held_out.to_string(index=False))
     if "delong_boruta_vs_rf_top8" in summary:
-        print("\nboruta vs RF top-8 (paired DeLong):",
-              summary["delong_boruta_vs_rf_top8"])
+        print("\nboruta vs RF top-8 (paired DeLong):", summary["delong_boruta_vs_rf_top8"])
     print(f"\nwritten to {OUT}")
 
 

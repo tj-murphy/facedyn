@@ -477,9 +477,7 @@ def _boruta_run(
         X_shadow = _make_shadows(X_active, rng)
 
         seed = rng.randint(np.iinfo(np.int32).max)
-        importances = importance_fn(
-            np.hstack([X_active, X_shadow]), y, random_state=seed
-        )
+        importances = importance_fn(np.hstack([X_active, X_shadow]), y, random_state=seed)
         n_active = X_active.shape[1]
         real_importance = importances[:n_active]
         shadow_importance = importances[n_active:]
@@ -497,11 +495,7 @@ def _boruta_run(
             (shadow_importance.min(), shadow_importance.mean(), shadow_importance.max())
         )
 
-    history = (
-        np.array(importance_history)
-        if importance_history
-        else np.empty((0, n_features))
-    )
+    history = np.array(importance_history) if importance_history else np.empty((0, n_features))
     shadows = np.array(shadow_history) if shadow_history else np.empty((0, 3))
 
     return BorutaRun(
@@ -604,12 +598,14 @@ def correlated_feature_clusters(
         others = members[members != i]
         max_abs_corr.append(correlation[i, others].max() if others.size else np.nan)
 
-    clusters = pd.DataFrame({
-        "feature": columns,
-        "cluster": labels,
-        "cluster_size": [sizes[label] for label in labels],
-        "max_abs_corr": max_abs_corr,
-    })
+    clusters = pd.DataFrame(
+        {
+            "feature": columns,
+            "cluster": labels,
+            "cluster_size": [sizes[label] for label in labels],
+            "max_abs_corr": max_abs_corr,
+        }
+    )
     return clusters.sort_values(
         ["cluster_size", "cluster", "feature"], ascending=[False, True, True]
     ).reset_index(drop=True)
@@ -848,8 +844,7 @@ class BorutaSelector(TransformerMixin, BaseEstimator):
 
         forest_n_jobs = self.n_jobs if self.n_repeats == 1 else 1
         importance_fn = self._resolve_importance_fn(forest_n_jobs)
-        args = (X_array, y_array, self.feature_columns_, importance_fn,
-                self.alpha, self.max_iter)
+        args = (X_array, y_array, self.feature_columns_, importance_fn, self.alpha, self.max_iter)
 
         if self.n_repeats == 1:
             # Run inline rather than through `joblib`. There is nothing to
@@ -890,29 +885,33 @@ class BorutaSelector(TransformerMixin, BaseEstimator):
         # finite values at all, hence the empty-slice guard.
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
-            per_run_median = np.array([
+            per_run_median = np.array(
                 [
-                    np.median(column[np.isfinite(column)])
-                    if np.isfinite(column).any()
-                    else np.nan
-                    for column in run.importance_history.T
+                    [
+                        np.median(column[np.isfinite(column)])
+                        if np.isfinite(column).any()
+                        else np.nan
+                        for column in run.importance_history.T
+                    ]
+                    for run in self.runs_
                 ]
-                for run in self.runs_
-            ])
+            )
             median_imp = np.nanmedian(per_run_median, axis=0)
 
         threshold = self.selection_threshold if n_runs > 1 else 0.0
         selected = selection_freq >= threshold if n_runs > 1 else n_confirmed > 0
 
-        stability = pd.DataFrame({
-            "feature": features,
-            "selection_freq": selection_freq,
-            "n_confirmed": n_confirmed,
-            "n_tentative": (raw == TENTATIVE).sum(axis=0),
-            "n_rejected": (rough_fixed == REJECTED).sum(axis=0),
-            "median_imp": median_imp,
-            "selected": selected,
-        })
+        stability = pd.DataFrame(
+            {
+                "feature": features,
+                "selection_freq": selection_freq,
+                "n_confirmed": n_confirmed,
+                "n_tentative": (raw == TENTATIVE).sum(axis=0),
+                "n_rejected": (rough_fixed == REJECTED).sum(axis=0),
+                "median_imp": median_imp,
+                "selected": selected,
+            }
+        )
 
         if self.correlation_threshold is not None:
             clusters = correlated_feature_clusters(
@@ -964,14 +963,16 @@ class BorutaSelector(TransformerMixin, BaseEstimator):
             # A run "confirms the cluster" if it confirmed any member.
             confirmed_any = (rough_fixed[:, columns] == CONFIRMED).any(axis=1)
             best = group.loc[group["selection_freq"].idxmax()]
-            rows.append({
-                "cluster": cluster,
-                "n_features": len(members),
-                "cluster_freq": confirmed_any.mean(),
-                "best_feature": best["feature"],
-                "best_feature_freq": best["selection_freq"],
-                "members": members,
-            })
+            rows.append(
+                {
+                    "cluster": cluster,
+                    "n_features": len(members),
+                    "cluster_freq": confirmed_any.mean(),
+                    "best_feature": best["feature"],
+                    "best_feature_freq": best["selection_freq"],
+                    "members": members,
+                }
+            )
 
         return (
             pd.DataFrame(rows)
@@ -1043,23 +1044,27 @@ def boruta_feature_stats(selector: BorutaSelector, run: int = 0) -> pd.DataFrame
         finite = np.isfinite(column)
         values = column[finite]
         if values.size == 0:
-            rows.append({
-                "feature": feature,
-                "meanImp": np.nan,
-                "medianImp": np.nan,
-                "minImp": np.nan,
-                "maxImp": np.nan,
-                "normHits": 0.0,
-            })
+            rows.append(
+                {
+                    "feature": feature,
+                    "meanImp": np.nan,
+                    "medianImp": np.nan,
+                    "minImp": np.nan,
+                    "maxImp": np.nan,
+                    "normHits": 0.0,
+                }
+            )
             continue
-        rows.append({
-            "feature": feature,
-            "meanImp": values.mean(),
-            "medianImp": np.median(values),
-            "minImp": values.min(),
-            "maxImp": values.max(),
-            "normHits": float(np.sum(shadow_max[: values.size] < values) / n_iterations),
-        })
+        rows.append(
+            {
+                "feature": feature,
+                "meanImp": values.mean(),
+                "medianImp": np.median(values),
+                "minImp": values.min(),
+                "maxImp": values.max(),
+                "normHits": float(np.sum(shadow_max[: values.size] < values) / n_iterations),
+            }
+        )
 
     stats = pd.DataFrame(rows)
     stats["decision"] = boruta_run.decisions
@@ -1153,9 +1158,7 @@ def plot_boruta_importance(
     for feature in order:
         values = boruta_run.importance_history[:, index[feature]]
         data.append(values[np.isfinite(values)])
-        colours.append(
-            _DECISION_COLOURS[boruta_run.rough_fixed_decisions[index[feature]]]
-        )
+        colours.append(_DECISION_COLOURS[boruta_run.rough_fixed_decisions[index[feature]]])
         labels.append(feature)
 
     if ax is None:
@@ -1171,8 +1174,12 @@ def plot_boruta_importance(
         else {"vert": False}
     )
     boxes = ax.boxplot(
-        data, patch_artist=True, widths=0.6, showfliers=False,
-        medianprops={"color": "black"}, **horizontal,
+        data,
+        patch_artist=True,
+        widths=0.6,
+        showfliers=False,
+        medianprops={"color": "black"},
+        **horizontal,
     )
     for patch, colour in zip(boxes["boxes"], colours, strict=True):
         patch.set_facecolor(colour)
@@ -1259,7 +1266,10 @@ def plot_boruta_stability(
     ]
     ax.barh(shown["feature"], shown["selection_freq"], color=colours)
     ax.axvline(
-        selector.selection_threshold, color="black", linestyle="--", linewidth=1,
+        selector.selection_threshold,
+        color="black",
+        linestyle="--",
+        linewidth=1,
         label=f"threshold = {selector.selection_threshold:g}",
     )
     ax.set_xlim(0, 1)

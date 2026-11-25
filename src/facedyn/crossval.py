@@ -64,6 +64,7 @@ _SERIES_COL = "series"
 # Result
 # --------------------------------------------------------------------------
 
+
 @dataclass
 class CVPipelineResult:
     """Output of :func:`cross_validate_pipeline`.
@@ -128,11 +129,7 @@ class CVPipelineResult:
         if self.selected_aus.empty:
             return pd.Series(dtype=float, name="frequency")
         per_fold = self.selected_aus.drop_duplicates(["repeat", "fold", "au"])
-        return (
-            (per_fold["au"].value_counts() / self.n_folds)
-            .rename("frequency")
-            .rename_axis("au")
-        )
+        return (per_fold["au"].value_counts() / self.n_folds).rename("frequency").rename_axis("au")
 
     def feature_frequency(self) -> pd.Series:
         """Fraction of folds in which each feature was kept by the selector.
@@ -183,9 +180,7 @@ class CVPipelineResult:
         if binary:
             positive_label = self.classes[-1] if positive_label is None else positive_label
             if positive_label not in self.classes:
-                raise ValueError(
-                    f"positive_label={positive_label!r} is not one of {self.classes}."
-                )
+                raise ValueError(f"positive_label={positive_label!r} is not one of {self.classes}.")
         proba_cols = [f"proba_{c}" for c in self.classes]
 
         rows = {}
@@ -198,7 +193,9 @@ class CVPipelineResult:
             }
             if binary:
                 auc, lower, upper = roc_auc_delong_ci(
-                    y_true, part[f"proba_{positive_label}"], positive_label=positive_label,
+                    y_true,
+                    part[f"proba_{positive_label}"],
+                    positive_label=positive_label,
                     alpha=alpha,
                 )
                 row.update(roc_auc=auc, roc_auc_ci_lower=lower, roc_auc_ci_upper=upper)
@@ -209,7 +206,8 @@ class CVPipelineResult:
                     is_class = y_true == cls
                     row[f"roc_auc_{cls}"] = (
                         float(roc_auc_score(is_class, proba[:, k]))
-                        if 0 < is_class.sum() < len(is_class) else float("nan")
+                        if 0 < is_class.sum() < len(is_class)
+                        else float("nan")
                     )
             rows[repeat] = row
         return pd.DataFrame.from_dict(rows, orient="index").rename_axis("repeat")
@@ -218,6 +216,7 @@ class CVPipelineResult:
 # --------------------------------------------------------------------------
 # Main entry point
 # --------------------------------------------------------------------------
+
 
 def cross_validate_pipeline(
     frames: pd.DataFrame,
@@ -353,8 +352,15 @@ def cross_validate_pipeline(
         raise ValueError(f"labels must contain at least two classes, got {classes}.")
 
     steps = _resolve_steps(
-        smoother, normalizer, decomposer, feature_extractor, cleaner, selector, model,
-        random_state, video_col,
+        smoother,
+        normalizer,
+        decomposer,
+        feature_extractor,
+        cleaner,
+        selector,
+        model,
+        random_state,
+        video_col,
     )
     if cv is None:
         cv = RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=3, random_state=random_state)
@@ -375,13 +381,15 @@ def cross_validate_pipeline(
         "frame_col": frame_col,
     }
     outputs = Parallel(n_jobs=n_jobs)(
-        delayed(_run_fold)(
-            frames, videos, y, train_idx, test_idx, steps, config
-        )
+        delayed(_run_fold)(frames, videos, y, train_idx, test_idx, steps, config)
         for train_idx, test_idx in splits
     )
 
-    empty = [ids for ids, out in zip(fold_ids, outputs, strict=True) if not out["features"]["selected"].any()]
+    empty = [
+        ids
+        for ids, out in zip(fold_ids, outputs, strict=True)
+        if not out["features"]["selected"].any()
+    ]
     if empty:
         warnings.warn(
             f"The selector kept no features in {len(empty)} of {len(splits)} folds "
@@ -396,14 +404,16 @@ def cross_validate_pipeline(
     nmf_bases, fold_models = {}, {}
     for (repeat, fold), (_, test_idx), out in zip(fold_ids, splits, outputs, strict=True):
         test_videos = videos[test_idx]
-        oof = pd.DataFrame({
-            "video": test_videos,
-            "group": group_ids[test_idx],
-            "repeat": repeat,
-            "fold": fold,
-            "y_true": y[test_idx],
-            "y_pred": out["y_pred"],
-        })
+        oof = pd.DataFrame(
+            {
+                "video": test_videos,
+                "group": group_ids[test_idx],
+                "repeat": repeat,
+                "fold": fold,
+                "y_true": y[test_idx],
+                "y_pred": out["y_pred"],
+            }
+        )
         for k, cls in enumerate(classes):
             oof[f"proba_{cls}"] = out["proba"][:, k]
         oof_parts.append(oof)
@@ -422,9 +432,7 @@ def cross_validate_pipeline(
         oof=pd.concat(oof_parts, ignore_index=True),
         scores=pd.DataFrame(score_rows).set_index(lead),
         selected_aus=au_table[lead + [c for c in au_table.columns if c not in lead]],
-        selected_features=feature_table[
-            lead + [c for c in feature_table.columns if c not in lead]
-        ],
+        selected_features=feature_table[lead + [c for c in feature_table.columns if c not in lead]],
         classes=classes,
         nmf_bases=nmf_bases,
         fold_models=fold_models,
@@ -434,6 +442,7 @@ def cross_validate_pipeline(
 # --------------------------------------------------------------------------
 # Helpers
 # --------------------------------------------------------------------------
+
 
 def _per_video(frames, spec, videos, video_col, name) -> np.ndarray:
     """One value per video, from a column name or a video-indexed Series."""
@@ -458,9 +467,19 @@ def _per_video(frames, spec, videos, video_col, name) -> np.ndarray:
     return values.to_numpy()
 
 
-def _resolve_steps(smoother, normalizer, decomposer, feature_extractor, cleaner,
-                   selector, model, random_state, video_col) -> dict:
+def _resolve_steps(
+    smoother,
+    normalizer,
+    decomposer,
+    feature_extractor,
+    cleaner,
+    selector,
+    model,
+    random_state,
+    video_col,
+) -> dict:
     """Fill in defaults; ``False`` becomes ``None`` (step skipped)."""
+
     def pick(value, default):
         if value is False:
             return None
@@ -477,9 +496,7 @@ def _resolve_steps(smoother, normalizer, decomposer, feature_extractor, cleaner,
         "selector": pick(selector, lambda: BorutaSelector(random_state=random_state)),
         "model": pick(
             model,
-            lambda: make_classifier(
-                "random_forest", preset="default", random_state=random_state
-            ),
+            lambda: make_classifier("random_forest", preset="default", random_state=random_state),
         ),
     }
     if steps["extractor"] is None:
@@ -520,8 +537,7 @@ def _roc_auc(y_true, proba, classes) -> float:
     if present != set(classes):
         # OvR macro AUC is undefined for a class absent from the fold.
         return float("nan")
-    return float(roc_auc_score(y_true, proba, multi_class="ovr", average="macro",
-                               labels=classes))
+    return float(roc_auc_score(y_true, proba, multi_class="ovr", average="macro", labels=classes))
 
 
 def _fold_scores(oof: pd.DataFrame, classes) -> dict:
@@ -561,8 +577,7 @@ def _series_frames(train, test, steps, config):
             train, test = decomposer.transform(train), decomposer.transform(test)
             series = list(basis.index)
     else:
-        series = _default_series(config["series_columns"], normalizer, steps["smoother"],
-                                 train)
+        series = _default_series(config["series_columns"], normalizer, steps["smoother"], train)
 
     keep = [video_col, frame_col, *series]
     return train[keep], test[keep], series, basis, aus
@@ -583,8 +598,9 @@ def _default_series(series_columns, normalizer, smoother, frames) -> list[str]:
 
 
 def _wide_series(frames, series, video_col, frame_col) -> pd.DataFrame:
-    return reshape_to_wide(frames, value_cols=series, id_vars=[], group_col=video_col,
-                           frame_col=frame_col)
+    return reshape_to_wide(
+        frames, value_cols=series, id_vars=[], group_col=video_col, frame_col=frame_col
+    )
 
 
 def _feature_columns(table, video_col) -> list[str]:
@@ -593,8 +609,9 @@ def _feature_columns(table, video_col) -> list[str]:
 
 def _to_video_table(long, feature_cols, video_order, video_col) -> pd.DataFrame:
     """One row per video, indexed by video id, in ``video_order``."""
-    wide = pivot_features_wide(long, group_col=video_col, series_col=_SERIES_COL,
-                               feature_columns=feature_cols, id_vars=[])
+    wide = pivot_features_wide(
+        long, group_col=video_col, series_col=_SERIES_COL, feature_columns=feature_cols, id_vars=[]
+    )
     return wide.set_index(video_col).reindex(video_order)
 
 
@@ -609,7 +626,8 @@ def _run_fold(frames, videos, y, train_idx, test_idx, steps, config) -> dict:
     train_frames, test_frames, series, basis, aus = _series_frames(
         frames.loc[in_train].reset_index(drop=True),
         frames.loc[in_test].reset_index(drop=True),
-        steps, config,
+        steps,
+        config,
     )
 
     train_wide = _wide_series(train_frames, series, video_col, frame_col)
@@ -661,6 +679,7 @@ def _run_fold(frames, videos, y, train_idx, test_idx, steps, config) -> dict:
         "basis": basis if config["keep_bases"] else None,
         "model": (
             {"model": model, "features": kept_cols, "X_test": X_test[kept_cols]}
-            if config["keep_models"] else None
+            if config["keep_models"]
+            else None
         ),
     }

@@ -21,18 +21,22 @@ def make_paired_df(n_pairs: int, frames_per_video: int = 3) -> pd.DataFrame:
         real_name = f"real_{i}"
         fake_name = f"fake_{i}"
         for frame in range(frames_per_video):
-            rows.append({
-                "video_filename": real_name,
-                "corresponding_video": fake_name,
-                "isfakeorreal": "real",
-                "frame": frame,
-            })
-            rows.append({
-                "video_filename": fake_name,
-                "corresponding_video": real_name,
-                "isfakeorreal": "fake",
-                "frame": frame,
-            })
+            rows.append(
+                {
+                    "video_filename": real_name,
+                    "corresponding_video": fake_name,
+                    "isfakeorreal": "real",
+                    "frame": frame,
+                }
+            )
+            rows.append(
+                {
+                    "video_filename": fake_name,
+                    "corresponding_video": real_name,
+                    "isfakeorreal": "fake",
+                    "frame": frame,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -43,11 +47,13 @@ def make_unpaired_df(n_videos: int, frames_per_video: int = 3) -> pd.DataFrame:
     conditions = ["happy", "sad", "neutral"]
     for i in range(n_videos):
         for frame in range(frames_per_video):
-            rows.append({
-                "video_filename": f"video_{i}",
-                "condition": conditions[i % len(conditions)],
-                "frame": frame,
-            })
+            rows.append(
+                {
+                    "video_filename": f"video_{i}",
+                    "condition": conditions[i % len(conditions)],
+                    "frame": frame,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -214,14 +220,18 @@ def make_deepfake_named_df(n_pairs: int = 4) -> pd.DataFrame:
     """Google DFD filenames: real `{actor}__{scene}`, fake `{a}_{b}__{scene}__{hash}`."""
     rows = []
     for i in range(n_pairs):
-        rows.append({
-            "video_filename": f"{i:02d}__scene_{i}",
-            "isfakeorreal": "real",
-        })
-        rows.append({
-            "video_filename": f"{i:02d}_{i + 50:02d}__scene_{i}__ABCD{i}",
-            "isfakeorreal": "fake",
-        })
+        rows.append(
+            {
+                "video_filename": f"{i:02d}__scene_{i}",
+                "isfakeorreal": "real",
+            }
+        )
+        rows.append(
+            {
+                "video_filename": f"{i:02d}_{i + 50:02d}__scene_{i}__ABCD{i}",
+                "isfakeorreal": "fake",
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -235,22 +245,24 @@ def test_pair_groups_from_filenames_recovers_the_source_video():
 
 
 def test_pair_groups_from_filenames_warns_when_the_rule_does_not_fit():
-    df = pd.DataFrame({
-        "video_filename": ["subject_a", "subject_b"],
-        "isfakeorreal": ["real", "fake"],
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": ["subject_a", "subject_b"],
+            "isfakeorreal": ["real", "fake"],
+        }
+    )
     with pytest.warns(UserWarning, match="filename rule may not fit"):
         pair_groups_from_filenames(df)
 
 
 def test_pair_groups_from_filenames_accepts_a_custom_key():
-    df = pd.DataFrame({
-        "video_filename": ["a-real", "a-fake", "b-real", "b-fake"],
-        "isfakeorreal": ["real", "fake", "real", "fake"],
-    })
-    groups = pair_groups_from_filenames(
-        df, key_fn=lambda video, label: video.split("-")[0]
+    df = pd.DataFrame(
+        {
+            "video_filename": ["a-real", "a-fake", "b-real", "b-fake"],
+            "isfakeorreal": ["real", "fake", "real", "fake"],
+        }
     )
+    groups = pair_groups_from_filenames(df, key_fn=lambda video, label: video.split("-")[0])
     assert list(groups) == ["a", "a", "b", "b"]
 
 
@@ -313,12 +325,12 @@ def test_repeated_grouped_cv_repeats_are_genuinely_different_partitions():
     y = (df["isfakeorreal"] == "real").to_numpy()
 
     folds = list(
-        RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=3, random_state=0)
-        .split(df[["feature"]], y, groups)
+        RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=3, random_state=0).split(
+            df[["feature"]], y, groups
+        )
     )
     partitions = [
-        frozenset(frozenset(test.tolist()) for _, test in folds[i:i + 5])
-        for i in (0, 5, 10)
+        frozenset(frozenset(test.tolist()) for _, test in folds[i : i + 5]) for i in (0, 5, 10)
     ]
 
     assert len(set(partitions)) == 3
@@ -332,8 +344,7 @@ def test_repeated_grouped_cv_folds_stay_balanced_and_stratified():
     groups = pair_groups(df)
     y = (df["isfakeorreal"] == "real").to_numpy()
 
-    for _, test_idx in RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=2,
-                                                    random_state=0).split(
+    for _, test_idx in RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=2, random_state=0).split(
         df[["feature"]], y, groups
     ):
         assert len(test_idx) == pytest.approx(len(df) / 5, abs=4)
@@ -371,13 +382,15 @@ def make_repeated_measures_df(
             for v in range(videos_per_session):
                 label = classes[(p + v) % len(classes)]
                 for frame in range(frames_per_video):
-                    rows.append({
-                        "video_filename": f"v{k:03d}",
-                        "participant": f"P{p:02d}",
-                        "session": session,
-                        "emotion": label,
-                        "frame": frame,
-                    })
+                    rows.append(
+                        {
+                            "video_filename": f"v{k:03d}",
+                            "participant": f"P{p:02d}",
+                            "session": session,
+                            "emotion": label,
+                            "frame": frame,
+                        }
+                    )
                 k += 1
     return pd.DataFrame(rows)
 
@@ -399,9 +412,7 @@ def test_group_split_by_participant_keeps_each_participant_on_one_side():
 def test_group_split_by_participant_keeps_both_sessions_together():
     df = make_repeated_measures_df(n_participants=10)
     for seed in range(5):
-        train_df, test_df = group_train_test_split(
-            df, random_state=seed, group_col="participant"
-        )
+        train_df, test_df = group_train_test_split(df, random_state=seed, group_col="participant")
         for side in (train_df, test_df):
             assert (side.groupby("participant")["session"].nunique() == 2).all()
 
@@ -461,8 +472,10 @@ def test_groups_from_column_aligns_with_pivot_features_wide():
     ]
     rng = np.random.default_rng(0)
     long = pd.concat(
-        [per_video.assign(series=s, mean=rng.normal(size=len(per_video)))
-         for s in ("AU01_r", "AU12_r")]
+        [
+            per_video.assign(series=s, mean=rng.normal(size=len(per_video)))
+            for s in ("AU01_r", "AU12_r")
+        ]
     ).sample(frac=1, random_state=1)
 
     wide = pivot_features_wide(long, feature_columns=["mean"])
@@ -472,9 +485,9 @@ def test_groups_from_column_aligns_with_pivot_features_wide():
     # Directly from the wide table (participant carried through as id_var) ...
     assert list(groups_from_column(wide, "participant")) == expected
     # ... or from the frames, aligned to the wide table's video order.
-    assert list(
-        groups_from_column(frames, "participant", videos=wide["video_filename"])
-    ) == expected
+    assert (
+        list(groups_from_column(frames, "participant", videos=wide["video_filename"])) == expected
+    )
 
 
 def test_groups_from_column_with_videos_rejects_unknown_videos():
@@ -531,20 +544,40 @@ def test_group_report_reads_the_same_on_frame_and_video_level_tables():
 
 def test_group_report_class_balance_per_group():
     df = make_repeated_measures_df(
-        n_participants=2, videos_per_session=2, sessions=("s1",), frames_per_video=1,
+        n_participants=2,
+        videos_per_session=2,
+        sessions=("s1",),
+        frames_per_video=1,
         classes=("happy", "sad", "angry"),
     )
     report = group_report(df, "participant", label_col="emotion")
 
     # P00 -> happy, sad; P01 -> sad, angry.
     assert report.columns.tolist() == [
-        "participant", "n_videos", "n_angry", "n_happy", "n_sad", "n_classes"
+        "participant",
+        "n_videos",
+        "n_angry",
+        "n_happy",
+        "n_sad",
+        "n_classes",
     ]
     assert report.to_dict("records") == [
-        {"participant": "P00", "n_videos": 2, "n_angry": 0, "n_happy": 1,
-         "n_sad": 1, "n_classes": 2},
-        {"participant": "P01", "n_videos": 2, "n_angry": 1, "n_happy": 0,
-         "n_sad": 1, "n_classes": 2},
+        {
+            "participant": "P00",
+            "n_videos": 2,
+            "n_angry": 0,
+            "n_happy": 1,
+            "n_sad": 1,
+            "n_classes": 2,
+        },
+        {
+            "participant": "P01",
+            "n_videos": 2,
+            "n_angry": 1,
+            "n_happy": 0,
+            "n_sad": 1,
+            "n_classes": 2,
+        },
     ]
 
 

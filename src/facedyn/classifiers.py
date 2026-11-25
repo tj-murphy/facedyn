@@ -103,9 +103,7 @@ def _unpenalised_logistic_params() -> dict:
     (coefficients match ``penalty=None`` exactly, and are about twice the
     norm of the regularised default).
     """
-    version = tuple(
-        int(part) for part in sklearn.__version__.split(".")[:2] if part.isdigit()
-    )
+    version = tuple(int(part) for part in sklearn.__version__.split(".")[:2] if part.isdigit())
     return {"C": np.inf} if version >= (1, 8) else {"penalty": None}
 
 
@@ -126,9 +124,7 @@ def _build_estimator(name: str, random_state, n_jobs) -> BaseEstimator:
         # the data. Used on every scikit-learn version so results do not
         # depend on which one is installed. Deterministic: the folds are
         # unshuffled, so `random_state` is not needed.
-        return CalibratedClassifierCV(
-            SVC(kernel="rbf"), method="sigmoid", cv=5, ensemble=False
-        )
+        return CalibratedClassifierCV(SVC(kernel="rbf"), method="sigmoid", cv=5, ensemble=False)
     if name == "logistic_regression":
         # Unregularised, matching R's `glm(family = binomial)`; sklearn's
         # default applies L2, which would not be the same model.
@@ -249,9 +245,7 @@ def make_classifiers(
     """
     names = list(CLASSIFIER_NAMES) if names is None else list(names)
     return {
-        name: make_classifier(
-            name, preset=preset, random_state=random_state, n_jobs=n_jobs
-        )
+        name: make_classifier(name, preset=preset, random_state=random_state, n_jobs=n_jobs)
         for name in names
     }
 

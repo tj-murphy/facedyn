@@ -46,9 +46,7 @@ def test_shift_is_recomputed_independently_per_call():
     out_b = normalizer.transform(b)
     out_c = normalizer.transform(c)
 
-    pd.testing.assert_series_equal(
-        out_b["smth_x"], out_c["smth_x"], check_exact=False, atol=1e-9
-    )
+    pd.testing.assert_series_equal(out_b["smth_x"], out_c["smth_x"], check_exact=False, atol=1e-9)
     assert out_b["smth_x"].min() == pytest.approx(0.0, abs=1e-9)
     assert out_c["smth_x"].min() == pytest.approx(0.0, abs=1e-9)
 
@@ -65,9 +63,7 @@ def test_mean_and_sd_are_frozen_from_fit_not_recomputed():
     out_using_train_params = normalizer_fit_on_train.transform(new_data)
     out_using_new_params = normalizer_fit_on_new.transform(new_data)
 
-    assert not np.allclose(
-        out_using_train_params["smth_x"], out_using_new_params["smth_x"]
-    )
+    assert not np.allclose(out_using_train_params["smth_x"], out_using_new_params["smth_x"])
 
 
 def test_nan_input_becomes_zero():
@@ -85,20 +81,24 @@ def test_transform_before_fit_raises():
 
 
 def test_column_selection_by_pattern():
-    df = pd.DataFrame({
-        "smth_AU01_r": [1.0, 2.0, 3.0],
-        "smth_AU12_r": [0.0, 1.0, 1.0],
-        "frame": [1, 2, 3],  # not "smth_"-prefixed, should be excluded
-    })
+    df = pd.DataFrame(
+        {
+            "smth_AU01_r": [1.0, 2.0, 3.0],
+            "smth_AU12_r": [0.0, 1.0, 1.0],
+            "frame": [1, 2, 3],  # not "smth_"-prefixed, should be excluded
+        }
+    )
     normalizer = ZScoreShiftNormalizer().fit(df)
     assert set(normalizer.columns_) == {"smth_AU01_r", "smth_AU12_r"}
     assert "frame" not in normalizer.columns_
 
 
 def test_explicit_columns_override_pattern():
-    df = pd.DataFrame({
-        "custom_signal": [1.0, 2.0, 3.0],
-        "other": [4.0, 5.0, 6.0],
-    })
+    df = pd.DataFrame(
+        {
+            "custom_signal": [1.0, 2.0, 3.0],
+            "other": [4.0, 5.0, 6.0],
+        }
+    )
     normalizer = ZScoreShiftNormalizer(columns=["custom_signal"]).fit(df)
     assert normalizer.columns_ == ["custom_signal"]

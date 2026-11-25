@@ -72,13 +72,15 @@ def make_frame_level_data(n_pairs: int = 32, seed: int = 0) -> pd.DataFrame:
             for frame in range(N_FRAMES):
                 signal = np.sin(frame / 6 + phase) * amplitude
                 values = baseline + signal + rng.normal(scale=0.15, size=len(AU_COLUMNS))
-                rows.append({
-                    "video_filename": video,
-                    "corresponding_video": partner,
-                    "isfakeorreal": label,
-                    "frame": frame,
-                    **dict(zip(AU_COLUMNS, np.abs(values), strict=True)),
-                })
+                rows.append(
+                    {
+                        "video_filename": video,
+                        "corresponding_video": partner,
+                        "isfakeorreal": label,
+                        "frame": frame,
+                        **dict(zip(AU_COLUMNS, np.abs(values), strict=True)),
+                    }
+                )
     return pd.DataFrame(rows)
 
 
@@ -108,9 +110,7 @@ def fitted_pipeline():
     smoother = RollingSmoother()
     smoothed = smoother.fit_transform(frames)
 
-    train_frames, test_frames = paired_train_test_split(
-        smoothed, train_size=0.75, random_state=0
-    )
+    train_frames, test_frames = paired_train_test_split(smoothed, train_size=0.75, random_state=0)
 
     normalizer = ZScoreShiftNormalizer().fit(train_frames)
     train_norm = normalizer.transform(train_frames)
@@ -208,7 +208,9 @@ def test_a_classifier_trains_on_train_features_and_scores_the_test_set(fitted_pi
     fit_classifiers(models, train_features[feature_columns], train_features["isfakeorreal"])
 
     results = evaluate_models(
-        models, test_features[feature_columns], test_features["isfakeorreal"],
+        models,
+        test_features[feature_columns],
+        test_features["isfakeorreal"],
         positive_label="fake",
     )
 
@@ -228,8 +230,11 @@ def test_feature_selection_runs_on_train_and_subsets_the_test_set(fitted_pipelin
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # the n_repeats=1 warning
         selector = BorutaSelector(
-            feature_columns=feature_columns, n_repeats=1, n_estimators=60,
-            importance="gini", random_state=0,
+            feature_columns=feature_columns,
+            n_repeats=1,
+            n_estimators=60,
+            importance="gini",
+            random_state=0,
         ).fit(train_features, train_features["isfakeorreal"])
 
     selected_test = selector.transform(test_features)

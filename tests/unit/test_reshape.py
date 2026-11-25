@@ -7,13 +7,15 @@ from facedyn.features.reshape import apply_rowwise, pivot_features_wide, reshape
 
 def test_reshape_to_wide_one_row_per_video_and_series():
     n = 20
-    df = pd.DataFrame({
-        "video_filename": ["v1"] * n + ["v2"] * n,
-        "isfakeorreal": ["real"] * (2 * n),
-        "frame": list(range(1, n + 1)) * 2,
-        "smth_AU01_r": np.arange(2 * n, dtype=float),
-        "smth_AU06_r": np.arange(2 * n, dtype=float) * 2,
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": ["v1"] * n + ["v2"] * n,
+            "isfakeorreal": ["real"] * (2 * n),
+            "frame": list(range(1, n + 1)) * 2,
+            "smth_AU01_r": np.arange(2 * n, dtype=float),
+            "smth_AU06_r": np.arange(2 * n, dtype=float) * 2,
+        }
+    )
 
     wide = reshape_to_wide(df, value_cols=["smth_AU01_r", "smth_AU06_r"])
 
@@ -35,13 +37,15 @@ def test_reshape_to_wide_drops_frame_varying_columns_not_fragments_pivot():
     instead of (video, series) -- confirmed to actually happen against
     real data (200x too many rows, ~99.6% NaN) before this was fixed."""
     n = 20
-    df = pd.DataFrame({
-        "video_filename": ["v1"] * n,
-        "isfakeorreal": ["real"] * n,  # constant per video -> safe, should be kept
-        "timestamp": np.arange(n, dtype=float),  # varies per frame -> must be dropped
-        "frame": list(range(1, n + 1)),
-        "smth_AU01_r": np.arange(n, dtype=float),
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": ["v1"] * n,
+            "isfakeorreal": ["real"] * n,  # constant per video -> safe, should be kept
+            "timestamp": np.arange(n, dtype=float),  # varies per frame -> must be dropped
+            "frame": list(range(1, n + 1)),
+            "smth_AU01_r": np.arange(n, dtype=float),
+        }
+    )
 
     with pytest.warns(UserWarning, match="timestamp"):
         wide = reshape_to_wide(df, value_cols=["smth_AU01_r"])
@@ -54,23 +58,27 @@ def test_reshape_to_wide_drops_frame_varying_columns_not_fragments_pivot():
 
 
 def test_reshape_to_wide_keeps_extra_metadata_columns_by_default():
-    df = pd.DataFrame({
-        "video_filename": ["v1", "v1"],
-        "frame": [1, 2],
-        "emotion": ["happy", "happy"],
-        "smth_AU01_r": [0.1, 0.2],
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": ["v1", "v1"],
+            "frame": [1, 2],
+            "emotion": ["happy", "happy"],
+            "smth_AU01_r": [0.1, 0.2],
+        }
+    )
     wide = reshape_to_wide(df, value_cols=["smth_AU01_r"])
     assert "emotion" in wide.columns
 
 
 def make_wide(n_rows: int = 3, n_frames: int = 10) -> pd.DataFrame:
     rng = np.random.default_rng(0)
-    return pd.DataFrame({
-        "video_filename": [f"v{i}" for i in range(n_rows)],
-        "series": ["smth_AU01_r"] * n_rows,
-        **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
-    })
+    return pd.DataFrame(
+        {
+            "video_filename": [f"v{i}" for i in range(n_rows)],
+            "series": ["smth_AU01_r"] * n_rows,
+            **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
+        }
+    )
 
 
 def test_split_wide_separates_metadata_from_values():
@@ -123,13 +131,15 @@ def _feature_rows(n_videos: int = 2) -> pd.DataFrame:
     rows = []
     for i in range(n_videos):
         for series in ["smth_AU01_r", "smth_AU06_r", "smth_AU12_r"]:
-            rows.append({
-                "video_filename": f"v{i}",
-                "isfakeorreal": "real",
-                "series": series,
-                "mean": rng.random(),
-                "sd": 0.1,
-            })
+            rows.append(
+                {
+                    "video_filename": f"v{i}",
+                    "isfakeorreal": "real",
+                    "series": series,
+                    "mean": rng.random(),
+                    "sd": 0.1,
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -140,9 +150,14 @@ def test_pivot_features_wide_one_row_per_group_series_suffixed_columns():
 
     assert wide.shape[0] == 2  # one row per video, not one per (video, series)
     expected_cols = {
-        "video_filename", "isfakeorreal",
-        "mean_smth_AU01_r", "mean_smth_AU06_r", "mean_smth_AU12_r",
-        "sd_smth_AU01_r", "sd_smth_AU06_r", "sd_smth_AU12_r",
+        "video_filename",
+        "isfakeorreal",
+        "mean_smth_AU01_r",
+        "mean_smth_AU06_r",
+        "mean_smth_AU12_r",
+        "sd_smth_AU01_r",
+        "sd_smth_AU06_r",
+        "sd_smth_AU12_r",
     }
     assert set(wide.columns) == expected_cols
 

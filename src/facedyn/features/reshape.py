@@ -30,7 +30,9 @@ def _resolve_id_vars(df: pd.DataFrame, candidates: list[str], group_col: str) ->
     candidate column that actually varies within a group, since including
     one would fragment the pivot into more than one row per group.
     """
-    constant_per_group = df.groupby(group_col, sort=False)[candidates].nunique(dropna=False).max() <= 1
+    constant_per_group = (
+        df.groupby(group_col, sort=False)[candidates].nunique(dropna=False).max() <= 1
+    )
     id_vars = constant_per_group.index[constant_per_group].tolist()
     dropped = [c for c in candidates if c not in id_vars]
     if dropped:
@@ -79,12 +81,17 @@ def reshape_to_wide(
         ``"series"``, then ``fr_1, fr_2, ...`` in ascending frame order.
     """
     if id_vars is None:
-        candidates = [c for c in df.columns if c not in value_cols and c not in (group_col, frame_col)]
+        candidates = [
+            c for c in df.columns if c not in value_cols and c not in (group_col, frame_col)
+        ]
         id_vars = _resolve_id_vars(df, candidates, group_col)
     keys = [group_col, *id_vars]
 
     long = df.melt(
-        id_vars=[*keys, frame_col], value_vars=value_cols, var_name="series", value_name="activation"
+        id_vars=[*keys, frame_col],
+        value_vars=value_cols,
+        var_name="series",
+        value_name="activation",
     )
     wide = long.pivot(index=[*keys, "series"], columns=frame_col, values="activation")
     wide = wide.reindex(sorted(wide.columns), axis=1)
@@ -215,7 +222,8 @@ def pivot_features_wide(
     """
     if feature_columns is None:
         feature_columns = [
-            c for c in df.columns
+            c
+            for c in df.columns
             if c not in (group_col, series_col) and pd.api.types.is_numeric_dtype(df[c])
         ]
     if id_vars is None:

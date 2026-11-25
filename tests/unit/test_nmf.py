@@ -91,11 +91,13 @@ def test_column_selection_by_pattern():
 
 
 def test_explicit_columns_override_pattern():
-    df = pd.DataFrame({
-        "id": [1, 2, 3, 4],
-        "a": [0.1, 0.2, 0.3, 0.4],
-        "b": [0.4, 0.3, 0.2, 0.1],
-    })
+    df = pd.DataFrame(
+        {
+            "id": [1, 2, 3, 4],
+            "a": [0.1, 0.2, 0.3, 0.4],
+            "b": [0.4, 0.3, 0.2, 0.1],
+        }
+    )
     decomposer = NMFDecomposer(n_components=1, columns=["a", "b"], random_state=0).fit(df)
     assert decomposer.columns_ == ["a", "b"]
 
@@ -108,7 +110,9 @@ def test_masked_nmf_fully_observed_is_comparable_to_sklearn():
     W, H = _masked_nmf(data, mask, n_components=3, random_state=0)
     masked_mse = ((data - W @ H) ** 2).mean()
 
-    sklearn_model = SklearnNMF(n_components=3, init="nndsvda", random_state=0, max_iter=750, tol=1e-6)
+    sklearn_model = SklearnNMF(
+        n_components=3, init="nndsvda", random_state=0, max_iter=750, tol=1e-6
+    )
     W_sk = sklearn_model.fit_transform(data)
     sklearn_mse = ((data - W_sk @ sklearn_model.components_) ** 2).mean()
 
@@ -198,9 +202,7 @@ def test_cv_sweep_n_seeds_1_matches_default_behaviour_exactly():
 
 def test_cv_sweep_multiple_seeds_adds_seed_column_and_varies_results():
     df = make_low_rank_df(n_samples=60, n_features=10, rank=3, noise=0.15, seed=1)
-    result = nmf_rank_cv_sweep(
-        df, ranks=range(2, 5), n_replicates=2, n_seeds=3, random_state=0
-    )
+    result = nmf_rank_cv_sweep(df, ranks=range(2, 5), n_replicates=2, n_seeds=3, random_state=0)
 
     assert set(result.columns) == {"seed", "rank", "rep", "train_mse", "test_mse"}
     assert set(result["seed"]) == {0, 1, 2}
@@ -266,11 +268,14 @@ def _result_with_outlier() -> pd.DataFrame:
     records = []
     for rank in range(2, 6):
         for rep in range(3):
-            records.append({
-                "rank": rank, "rep": rep,
-                "train_mse": 1.0 - 0.1 * rank,
-                "test_mse": 0.8 + 0.05 * rank,
-            })
+            records.append(
+                {
+                    "rank": rank,
+                    "rep": rep,
+                    "train_mse": 1.0 - 0.1 * rank,
+                    "test_mse": 0.8 + 0.05 * rank,
+                }
+            )
     records.append({"rank": 5, "rep": 0, "train_mse": 0.5, "test_mse": 500.0})
     return pd.DataFrame.from_records(records)
 
@@ -347,8 +352,11 @@ def test_plot_nmf_basis_heatmap_accepts_custom_labels():
 
 
 def make_blocky_df(
-    n_per_block: int = 30, n_blocks: int = 3, n_features: int = 9,
-    noise: float = 0.01, seed: int = 0,
+    n_per_block: int = 30,
+    n_blocks: int = 3,
+    n_features: int = 9,
+    noise: float = 0.01,
+    seed: int = 0,
 ) -> pd.DataFrame:
     """Synthetic data with `n_blocks` well-separated, non-overlapping row
     groups, each dominated by its own distinct slice of features. Unlike
@@ -395,9 +403,7 @@ def test_cophenetic_correlation_n_jobs_matches_serial_exactly():
     # sequential default bit-for-bit, not just approximately.
     df = make_low_rank_df(n_samples=60, n_features=8, rank=3, seed=0)
     serial = nmf_cophenetic_correlation(df, ranks=range(2, 4), n_runs=3, random_state=0)
-    parallel = nmf_cophenetic_correlation(
-        df, ranks=range(2, 4), n_runs=3, random_state=0, n_jobs=2
-    )
+    parallel = nmf_cophenetic_correlation(df, ranks=range(2, 4), n_runs=3, random_state=0, n_jobs=2)
 
     pd.testing.assert_frame_equal(serial, parallel)
 
@@ -511,9 +517,7 @@ def test_plot_nmf_reconstruction_runs_and_returns_axes(tmp_path):
     df = make_low_rank_df(n_samples=100, n_features=5, rank=2, seed=0)
     decomposer = NMFDecomposer(n_components=2, random_state=0).fit(df)
 
-    ax = plot_nmf_reconstruction(
-        decomposer, df, save_path="recon.png", output_dir=str(tmp_path)
-    )
+    ax = plot_nmf_reconstruction(decomposer, df, save_path="recon.png", output_dir=str(tmp_path))
     assert ax is not None
     assert len(ax.lines) == 2  # original + reconstructed
     assert (tmp_path / "recon.png").exists()
@@ -558,8 +562,6 @@ def test_plot_nmf_reconstruction_r2_bar_runs_and_returns_axes(tmp_path):
     decomposer = NMFDecomposer(n_components=3, random_state=0).fit(df)
     r2_table = nmf_reconstruction_r2_per_au(decomposer, df)
 
-    ax = plot_nmf_reconstruction_r2_bar(
-        r2_table, save_path="r2_bar.png", output_dir=str(tmp_path)
-    )
+    ax = plot_nmf_reconstruction_r2_bar(r2_table, save_path="r2_bar.png", output_dir=str(tmp_path))
     assert len(ax.patches) == 6
     assert (tmp_path / "r2_bar.png").exists()

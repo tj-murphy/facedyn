@@ -39,16 +39,40 @@ __all__ = [
 
 FEATURE_NAMES: list[str] = [
     # distribution
-    "mean", "sd", "min", "max", "range", "median", "iqr", "skewness", "kurtosis",
+    "mean",
+    "sd",
+    "min",
+    "max",
+    "range",
+    "median",
+    "iqr",
+    "skewness",
+    "kurtosis",
     # dynamics
-    "acf1", "acf2", "acf10_sumsq", "pacf1", "pacf5_sumsq", "diff1_sd", "mean_abs_diff",
+    "acf1",
+    "acf2",
+    "acf10_sumsq",
+    "pacf1",
+    "pacf5_sumsq",
+    "diff1_sd",
+    "mean_abs_diff",
     # trend / stationarity
-    "trend_slope", "trend_r2", "mean_crossings", "longest_run_above_mean",
+    "trend_slope",
+    "trend_r2",
+    "mean_crossings",
+    "longest_run_above_mean",
     # complexity
-    "sample_entropy", "permutation_entropy", "spectral_entropy",
+    "sample_entropy",
+    "permutation_entropy",
+    "spectral_entropy",
     # activation
-    "prop_active", "n_episodes", "mean_episode_len", "max_episode_len",
-    "mean_onset_slope", "mean_offset_slope", "peak_rate",
+    "prop_active",
+    "n_episodes",
+    "mean_episode_len",
+    "max_episode_len",
+    "mean_onset_slope",
+    "mean_offset_slope",
+    "peak_rate",
     # meta
     "length",
 ]
@@ -335,8 +359,13 @@ def _activation(x: np.ndarray, activation_threshold="mean") -> dict[str, float]:
     """
     n = len(x)
     keys = [
-        "prop_active", "n_episodes", "mean_episode_len", "max_episode_len",
-        "mean_onset_slope", "mean_offset_slope", "peak_rate",
+        "prop_active",
+        "n_episodes",
+        "mean_episode_len",
+        "max_episode_len",
+        "mean_onset_slope",
+        "mean_offset_slope",
+        "peak_rate",
     ]
     if n < 2:
         return dict.fromkeys(keys, np.nan)

@@ -132,7 +132,7 @@ def humanise_feature_label(column: str) -> str:
     feature = series = None
     for name in names:
         if column.startswith(name + "_") and len(column) > len(name) + 1:
-            feature, series = name, column[len(name) + 1:]
+            feature, series = name, column[len(name) + 1 :]
             break
         if column.endswith("_" + name) and len(column) > len(name) + 1:
             feature, series = name, column[: -len(name) - 1].rstrip("_")

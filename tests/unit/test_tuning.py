@@ -64,17 +64,19 @@ def make_paired_dataset(n_pairs: int = 60, seed: int = 0):
         identity = rng.normal(scale=4)
         for label in ("real", "fake"):
             sign = 1.0 if label == "fake" else -1.0
-            rows.append({
-                "video_filename": f"{label}_{i}",
-                "corresponding_video": f"{'fake' if label == 'real' else 'real'}_{i}",
-                "isfakeorreal": label,
-                "f_strong": sign * 0.8 + rng.normal(scale=1.0),
-                "f_weak": sign * 0.15 + rng.normal(scale=1.0),
-                "f_pair": identity + rng.normal(scale=0.05),
-                "noise_0": rng.normal(),
-                "noise_1": rng.normal(),
-                "noise_2": rng.normal(),
-            })
+            rows.append(
+                {
+                    "video_filename": f"{label}_{i}",
+                    "corresponding_video": f"{'fake' if label == 'real' else 'real'}_{i}",
+                    "isfakeorreal": label,
+                    "f_strong": sign * 0.8 + rng.normal(scale=1.0),
+                    "f_weak": sign * 0.15 + rng.normal(scale=1.0),
+                    "f_pair": identity + rng.normal(scale=0.05),
+                    "noise_0": rng.normal(),
+                    "noise_1": rng.normal(),
+                    "noise_2": rng.normal(),
+                }
+            )
     df = pd.DataFrame(rows)
     return df, df["isfakeorreal"].to_numpy(), pair_groups(df)
 
@@ -98,6 +100,7 @@ def fast_model():
 
 # --- candidate grid -------------------------------------------------------
 
+
 def test_threshold_grid_is_the_values_frequencies_can_take():
     # With 4 runs a feature is confirmed in 0, 1, 2, 3 or 4 of them, so
     # quarters are the only thresholds that change anything.
@@ -114,18 +117,21 @@ def test_threshold_grid_rejects_zero_runs():
 
 # --- the selection rules --------------------------------------------------
 
+
 def hand_built_curve(scores, ses, thresholds=None) -> pd.DataFrame:
     """An aggregated curve with known contents, no Boruta involved."""
     thresholds = thresholds if thresholds is not None else np.linspace(0, 1, len(scores))
-    return pd.DataFrame({
-        "threshold": thresholds,
-        "n_splits_scored": 3,
-        "n_features_mean": np.arange(len(scores))[::-1].astype(float),
-        "n_features_min": np.arange(len(scores))[::-1],
-        "n_features_max": np.arange(len(scores))[::-1],
-        "score_mean": scores,
-        "score_se": ses,
-    })
+    return pd.DataFrame(
+        {
+            "threshold": thresholds,
+            "n_splits_scored": 3,
+            "n_features_mean": np.arange(len(scores))[::-1].astype(float),
+            "n_features_min": np.arange(len(scores))[::-1],
+            "n_features_max": np.arange(len(scores))[::-1],
+            "score_mean": scores,
+            "score_se": ses,
+        }
+    )
 
 
 def test_best_rule_takes_the_argmax():
@@ -149,9 +155,7 @@ def test_one_se_rule_reduces_to_the_argmax_when_the_curve_is_sharp():
 
 def test_rules_ignore_thresholds_that_scored_nothing():
     # The strictest thresholds selected no features at all.
-    curve = hand_built_curve(
-        [0.60, 0.72, 0.68, np.nan, np.nan], [0.05, 0.05, 0.05, np.nan, np.nan]
-    )
+    curve = hand_built_curve([0.60, 0.72, 0.68, np.nan, np.nan], [0.05, 0.05, 0.05, np.nan, np.nan])
     assert _select_threshold(curve, "one_se") == pytest.approx(0.50)
 
 
@@ -173,6 +177,7 @@ def test_unknown_rule_rejected():
 
 
 # --- the inner splits -----------------------------------------------------
+
 
 def test_inner_splits_never_break_a_pair():
     df, y, groups = make_paired_dataset()
@@ -198,26 +203,31 @@ def test_inner_splits_are_one_fifth_and_stratified():
 def test_inner_splits_differ_between_repeats():
     df, y, groups = make_paired_dataset()
     validations = [
-        frozenset(val_idx)
-        for _, val_idx in _inner_splits(df, y, groups, 5, 3, random_state=0)
+        frozenset(val_idx) for _, val_idx in _inner_splits(df, y, groups, 5, 3, random_state=0)
     ]
     assert len(set(validations)) == 3
 
 
 # --- threshold_sweep ------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def swept():
     """One fitted selector and its sweep, shared across the sweep tests."""
     df, y, groups = make_paired_dataset()
-    (sub_idx, val_idx), = _inner_splits(df, y, groups, 5, 1, random_state=0)
+    ((sub_idx, val_idx),) = _inner_splits(df, y, groups, 5, 1, random_state=0)
     X_sub, X_val = df.iloc[sub_idx], df.iloc[val_idx]
     y_sub, y_val = y[sub_idx], y[val_idx]
 
     selector = fast_selector().fit(X_sub, y_sub)
     sweep = threshold_sweep(
-        selector, X_sub, y_sub, X_val, y_val,
-        model=fast_model(), positive_label="fake",
+        selector,
+        X_sub,
+        y_sub,
+        X_val,
+        y_val,
+        model=fast_model(),
+        positive_label="fake",
     )
     return selector, sweep, (X_sub, y_sub, X_val, y_val)
 
@@ -225,9 +235,7 @@ def swept():
 def test_sweep_has_one_row_per_candidate_threshold(swept):
     selector, sweep, _ = swept
     assert list(sweep["threshold"]) == threshold_grid(selector.n_repeats).tolist()
-    assert list(sweep.columns) == [
-        "threshold", "n_features", "features", "score", "score_se"
-    ]
+    assert list(sweep.columns) == ["threshold", "n_features", "features", "score", "score_se"]
 
 
 def test_sweep_keeps_everything_at_threshold_zero(swept):
@@ -263,8 +271,14 @@ def test_sweep_returns_nan_rather_than_raising_on_an_empty_selection(swept):
     # Force the empty case regardless of what this fixture's Boruta run
     # confirmed: a threshold above 1.0 can never be met.
     forced = threshold_sweep(
-        selector, X_sub, y_sub, X_val, y_val,
-        model=fast_model(), positive_label="fake", thresholds=[1.5],
+        selector,
+        X_sub,
+        y_sub,
+        X_val,
+        y_val,
+        model=fast_model(),
+        positive_label="fake",
+        thresholds=[1.5],
     )
     assert forced.loc[0, "n_features"] == 0
     assert np.isnan(forced.loc[0, "score"])
@@ -287,8 +301,13 @@ def test_sweep_finds_the_planted_signal(swept):
 def test_sweep_is_deterministic(swept):
     selector, sweep, (X_sub, y_sub, X_val, y_val) = swept
     again = threshold_sweep(
-        selector, X_sub, y_sub, X_val, y_val,
-        model=fast_model(), positive_label="fake",
+        selector,
+        X_sub,
+        y_sub,
+        X_val,
+        y_val,
+        model=fast_model(),
+        positive_label="fake",
     )
     pd.testing.assert_frame_equal(sweep, again)
 
@@ -296,8 +315,14 @@ def test_sweep_is_deterministic(swept):
 def test_sweep_accepts_an_sklearn_scorer_without_a_standard_error(swept):
     selector, _, (X_sub, y_sub, X_val, y_val) = swept
     sweep = threshold_sweep(
-        selector, X_sub, y_sub, X_val, y_val,
-        model=fast_model(), scoring="accuracy", positive_label="fake",
+        selector,
+        X_sub,
+        y_sub,
+        X_val,
+        y_val,
+        model=fast_model(),
+        scoring="accuracy",
+        positive_label="fake",
     )
     scored = sweep[sweep["n_features"] > 0]
     assert scored["score"].between(0, 1).all()
@@ -306,11 +331,14 @@ def test_sweep_accepts_an_sklearn_scorer_without_a_standard_error(swept):
 
 # --- tune_selection_threshold --------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def tuned():
     df, y, groups = make_paired_dataset()
     result = tune_selection_threshold(
-        df, y, groups,
+        df,
+        y,
+        groups,
         selector=fast_selector(),
         model=fast_model(),
         positive_label="fake",
@@ -354,7 +382,9 @@ def test_tuning_refits_on_everything_at_the_chosen_threshold(tuned):
 def test_tuning_is_deterministic(tuned):
     df, y, groups, result = tuned
     again = tune_selection_threshold(
-        df, y, groups,
+        df,
+        y,
+        groups,
         selector=fast_selector(),
         model=fast_model(),
         positive_label="fake",
@@ -369,7 +399,9 @@ def test_tuning_is_deterministic(tuned):
 def test_tuning_without_refit_has_no_selector():
     df, y, groups = make_paired_dataset()
     result = tune_selection_threshold(
-        df, y, groups,
+        df,
+        y,
+        groups,
         selector=fast_selector(),
         model=fast_model(),
         positive_label="fake",
@@ -385,7 +417,9 @@ def test_tuning_without_refit_has_no_selector():
 def test_a_single_split_falls_back_to_the_delong_standard_error():
     df, y, groups = make_paired_dataset()
     result = tune_selection_threshold(
-        df, y, groups,
+        df,
+        y,
+        groups,
         selector=fast_selector(),
         model=fast_model(),
         positive_label="fake",
@@ -415,7 +449,9 @@ def test_tuning_rejects_zero_repeats():
 def test_the_best_rule_never_scores_below_the_one_se_rule(tuned):
     df, y, groups, one_se = tuned
     best = tune_selection_threshold(
-        df, y, groups,
+        df,
+        y,
+        groups,
         selector=fast_selector(),
         model=fast_model(),
         positive_label="fake",
@@ -432,6 +468,7 @@ def test_the_best_rule_never_scores_below_the_one_se_rule(tuned):
 
 
 # --- the figure -----------------------------------------------------------
+
 
 def test_plot_threshold_sweep_draws(tuned):
     *_, result = tuned
@@ -457,18 +494,21 @@ def test_plot_threshold_sweep_saves(tuned, tmp_path):
 
 # --- multiclass -------------------------------------------------------------
 
+
 def three_class_dataset(n_per_class: int = 30, seed: int = 0):
     """Three classes, without pairs: f_strong separates them, the rest is noise."""
     rng = np.random.default_rng(seed)
     rows = []
     for k, label in enumerate(("angry", "happy", "sad")):
         for i in range(n_per_class):
-            rows.append({
-                "video_filename": f"{label}_{i}",
-                "emotion": label,
-                "f_strong": 1.2 * k + rng.normal(),
-                **{f: rng.normal() for f in FEATURES if f != "f_strong"},
-            })
+            rows.append(
+                {
+                    "video_filename": f"{label}_{i}",
+                    "emotion": label,
+                    "f_strong": 1.2 * k + rng.normal(),
+                    **{f: rng.normal() for f in FEATURES if f != "f_strong"},
+                }
+            )
     df = pd.DataFrame(rows)
     groups = np.array([i % 15 for i in range(len(df))])  # 15 "participants"
     return df, df["emotion"].to_numpy(), groups
@@ -490,11 +530,16 @@ def test_sweep_rejects_binary_auc_for_three_classes():
 
 def test_sweep_scores_three_classes_with_ovr_auc():
     df, y, groups = three_class_dataset()
-    (sub_idx, val_idx), = _inner_splits(df, y, groups, 5, 1, random_state=0)
+    ((sub_idx, val_idx),) = _inner_splits(df, y, groups, 5, 1, random_state=0)
     selector = fast_selector().fit(df.iloc[sub_idx], y[sub_idx])
     sweep = threshold_sweep(
-        selector, df.iloc[sub_idx], y[sub_idx], df.iloc[val_idx], y[val_idx],
-        model=fast_model(), scoring="roc_auc_ovr",
+        selector,
+        df.iloc[sub_idx],
+        y[sub_idx],
+        df.iloc[val_idx],
+        y[val_idx],
+        model=fast_model(),
+        scoring="roc_auc_ovr",
     )
     scored = sweep.dropna(subset=["score"])
     assert not scored.empty

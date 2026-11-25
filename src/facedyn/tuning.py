@@ -159,9 +159,7 @@ def _score_features(
     label = positive_label
     if label is None:
         label = list(fitted.classes_)[-1]
-    aucs, cov = _delong_auc_cov(
-        np.asarray(y_score, dtype=float), _positive_mask(y_val, label)
-    )
+    aucs, cov = _delong_auc_cov(np.asarray(y_score, dtype=float), _positive_mask(y_val, label))
     return float(aucs[0]), float(np.sqrt(cov[0, 0]))
 
 
@@ -267,13 +265,15 @@ def threshold_sweep(
                     model, features, X_sub, y_sub, X_val, y_val, scoring, positive_label
                 )
             score, score_se = scored[key]
-        rows.append({
-            "threshold": float(threshold),
-            "n_features": len(features),
-            "features": tuple(features),
-            "score": score,
-            "score_se": score_se,
-        })
+        rows.append(
+            {
+                "threshold": float(threshold),
+                "n_features": len(features),
+                "features": tuple(features),
+                "score": score,
+                "score_se": score_se,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -290,11 +290,7 @@ def _inner_splits(X, y, groups, n_splits: int, n_repeats: int, random_state):
     cv = RepeatedStratifiedGroupKFold(
         n_splits=n_splits, n_repeats=n_repeats, random_state=random_state
     )
-    return [
-        split
-        for index, split in enumerate(cv.split(X, y, groups))
-        if index % n_splits == 0
-    ]
+    return [split for index, split in enumerate(cv.split(X, y, groups)) if index % n_splits == 0]
 
 
 def _aggregate_curve(per_split: pd.DataFrame) -> pd.DataFrame:
@@ -314,15 +310,17 @@ def _aggregate_curve(per_split: pd.DataFrame) -> pd.DataFrame:
             score_se = float(group.loc[np.isfinite(scores), "score_se"].iloc[0])
         else:
             score_se = float("nan")
-        rows.append({
-            "threshold": float(threshold),
-            "n_splits_scored": int(len(finite)),
-            "n_features_mean": float(group["n_features"].mean()),
-            "n_features_min": int(group["n_features"].min()),
-            "n_features_max": int(group["n_features"].max()),
-            "score_mean": float(finite.mean()) if len(finite) else float("nan"),
-            "score_se": score_se,
-        })
+        rows.append(
+            {
+                "threshold": float(threshold),
+                "n_splits_scored": int(len(finite)),
+                "n_features_mean": float(group["n_features"].mean()),
+                "n_features_min": int(group["n_features"].min()),
+                "n_features_max": int(group["n_features"].max()),
+                "score_mean": float(finite.mean()) if len(finite) else float("nan"),
+                "score_se": score_se,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -539,9 +537,7 @@ def tune_selection_threshold(
     # Fail before the expensive Boruta fits, not after the first one.
     _check_scoring_fits_labels(scoring, y)
 
-    template = selector if selector is not None else BorutaSelector(
-        random_state=random_state
-    )
+    template = selector if selector is not None else BorutaSelector(random_state=random_state)
     if model is None:
         model = _default_model(random_state)
 
@@ -559,9 +555,16 @@ def tune_selection_threshold(
         fitted.fit(X_sub, y_sub)
 
         sweep = threshold_sweep(
-            fitted, X_sub, y_sub, X_val, y_val,
-            model=model, scoring=scoring, positive_label=positive_label,
-            thresholds=thresholds, random_state=random_state,
+            fitted,
+            X_sub,
+            y_sub,
+            X_val,
+            y_val,
+            model=model,
+            scoring=scoring,
+            positive_label=positive_label,
+            thresholds=thresholds,
+            random_state=random_state,
         )
         sweep.insert(0, "split", split_index)
         frames.append(sweep)
@@ -594,6 +597,7 @@ def tune_selection_threshold(
 # --------------------------------------------------------------------------
 # Figure
 # --------------------------------------------------------------------------
+
 
 def _require_matplotlib(function_name: str):
     try:
@@ -655,32 +659,54 @@ def plot_threshold_sweep(
     if show_splits:
         for split, group in result.per_split_.groupby("split"):
             ax.plot(
-                group["threshold"], group["score"], linewidth=1,
-                color="#BBBBBB", zorder=1,
+                group["threshold"],
+                group["score"],
+                linewidth=1,
+                color="#BBBBBB",
+                zorder=1,
                 label="individual splits" if split == 0 else None,
             )
 
     ax.fill_between(
-        threshold, mean - se, mean + se, color="#4C72B0", alpha=0.18,
-        linewidth=0, zorder=2, label="±1 standard error",
+        threshold,
+        mean - se,
+        mean + se,
+        color="#4C72B0",
+        alpha=0.18,
+        linewidth=0,
+        zorder=2,
+        label="±1 standard error",
     )
     ax.plot(
-        threshold, mean, marker="o", markersize=4, linewidth=2,
-        color="#4C72B0", zorder=3, label=f"mean {result.scoring_}",
+        threshold,
+        mean,
+        marker="o",
+        markersize=4,
+        linewidth=2,
+        color="#4C72B0",
+        zorder=3,
+        label=f"mean {result.scoring_}",
     )
     ax.axvline(
-        result.best_threshold_, linestyle="--", linewidth=1.2, color="#C44E52",
+        result.best_threshold_,
+        linestyle="--",
+        linewidth=1.2,
+        color="#C44E52",
         zorder=4,
         label=f"chosen: {result.best_threshold_:g} "
-              f"({result.best_n_features_:g} features, {result.rule_})",
+        f"({result.best_n_features_:g} features, {result.rule_})",
     )
     if result.scoring_ == "roc_auc":
         ax.axhline(0.5, linestyle=":", linewidth=1, color="#999999", zorder=0)
 
     counts = ax.twinx()
     counts.plot(
-        threshold, curve["n_features_mean"], linewidth=1.2, linestyle="-.",
-        color="#55A868", zorder=1,
+        threshold,
+        curve["n_features_mean"],
+        linewidth=1.2,
+        linestyle="-.",
+        color="#55A868",
+        zorder=1,
     )
     counts.set_ylabel("features kept (mean)", color="#55A868")
     counts.tick_params(axis="y", labelcolor="#55A868")

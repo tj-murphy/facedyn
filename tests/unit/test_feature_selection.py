@@ -154,11 +154,13 @@ def test_tentative_rough_fix_splits_on_median_shadow_max():
     # R's rule: a tentative feature is confirmed iff its median
     # importance exceeds the median of the per-iteration shadowMax.
     decisions = np.array([TENTATIVE, TENTATIVE, CONFIRMED, REJECTED], dtype=object)
-    history = np.array([
-        [3.0, 1.0, 9.0, -np.inf],
-        [4.0, 1.0, 9.0, -np.inf],
-        [5.0, 1.0, 9.0, -np.inf],
-    ])
+    history = np.array(
+        [
+            [3.0, 1.0, 9.0, -np.inf],
+            [4.0, 1.0, 9.0, -np.inf],
+            [5.0, 1.0, 9.0, -np.inf],
+        ]
+    )
     shadow_max = np.array([2.0, 2.0, 2.0])
 
     resolved = tentative_rough_fix(decisions, history, shadow_max)
@@ -170,9 +172,7 @@ def test_tentative_rough_fix_splits_on_median_shadow_max():
 def test_tentative_rough_fix_is_a_no_op_without_tentatives():
     decisions = np.array([CONFIRMED, REJECTED], dtype=object)
 
-    resolved = tentative_rough_fix(
-        decisions, np.array([[1.0, -np.inf]]), np.array([0.5])
-    )
+    resolved = tentative_rough_fix(decisions, np.array([[1.0, -np.inf]]), np.array([0.5]))
 
     assert list(resolved) == [CONFIRMED, REJECTED]
     assert resolved is not decisions
@@ -401,14 +401,16 @@ def _correlated_frame() -> pd.DataFrame:
     rng = np.random.default_rng(0)
     n = 200
     base = rng.normal(size=n)
-    return pd.DataFrame({
-        # Three near-duplicates of one signal -- the shape that makes
-        # Boruta's feature-level selection unstable.
-        "dup_a": base,
-        "dup_b": base + rng.normal(scale=0.05, size=n),
-        "dup_c": base + rng.normal(scale=0.05, size=n),
-        "independent": rng.normal(size=n),
-    })
+    return pd.DataFrame(
+        {
+            # Three near-duplicates of one signal -- the shape that makes
+            # Boruta's feature-level selection unstable.
+            "dup_a": base,
+            "dup_b": base + rng.normal(scale=0.05, size=n),
+            "dup_c": base + rng.normal(scale=0.05, size=n),
+            "independent": rng.normal(size=n),
+        }
+    )
 
 
 def test_correlated_feature_clusters_groups_near_duplicates():
@@ -421,9 +423,7 @@ def test_correlated_feature_clusters_groups_near_duplicates():
 
 
 def test_correlated_feature_clusters_reports_sizes_and_max_correlation():
-    clusters = correlated_feature_clusters(_correlated_frame(), threshold=0.9).set_index(
-        "feature"
-    )
+    clusters = correlated_feature_clusters(_correlated_frame(), threshold=0.9).set_index("feature")
 
     assert clusters.loc["dup_a", "cluster_size"] == 3
     assert clusters.loc["independent", "cluster_size"] == 1
@@ -458,12 +458,14 @@ def _selector_frame() -> pd.DataFrame:
     rng = np.random.default_rng(0)
     n = 120
     signal = rng.normal(size=n)
-    frame = pd.DataFrame({
-        "video_filename": [f"v{i}" for i in range(n)],
-        "informative": signal,
-        "noise_a": rng.normal(size=n),
-        "noise_b": rng.normal(size=n),
-    })
+    frame = pd.DataFrame(
+        {
+            "video_filename": [f"v{i}" for i in range(n)],
+            "informative": signal,
+            "noise_a": rng.normal(size=n),
+            "noise_b": rng.normal(size=n),
+        }
+    )
     frame["isfakeorreal"] = np.where(signal > 0, "fake", "real")
     return frame
 
@@ -503,8 +505,15 @@ def test_selector_stability_reports_one_row_per_feature_sorted_by_frequency():
     assert stability["selection_freq"].is_monotonic_decreasing
     assert stability.iloc[0]["feature"] == "informative"
     assert set(stability.columns) >= {
-        "feature", "selection_freq", "n_confirmed", "n_tentative",
-        "n_rejected", "median_imp", "selected", "cluster", "cluster_size",
+        "feature",
+        "selection_freq",
+        "n_confirmed",
+        "n_tentative",
+        "n_rejected",
+        "median_imp",
+        "selected",
+        "cluster",
+        "cluster_size",
     }
 
 
@@ -527,8 +536,11 @@ def test_selector_warns_on_a_single_run():
     -- the exact trap that produced Paper 1's unreproducible 8 features."""
     frame = _selector_frame()
     selector = BorutaSelector(
-        feature_columns=FEATURES, n_repeats=1, importance="gini",
-        n_estimators=50, random_state=0,
+        feature_columns=FEATURES,
+        n_repeats=1,
+        importance="gini",
+        n_estimators=50,
+        random_state=0,
     )
 
     with pytest.warns(UserWarning, match="cannot show how stable"):
@@ -558,8 +570,12 @@ def test_selector_single_repeat_does_not_start_a_parallel_backend():
     module.Parallel = tracking_parallel
     try:
         selector = BorutaSelector(
-            feature_columns=FEATURES, n_repeats=1, importance="gini",
-            n_estimators=50, random_state=0, n_jobs=-1,
+            feature_columns=FEATURES,
+            n_repeats=1,
+            importance="gini",
+            n_estimators=50,
+            random_state=0,
+            n_jobs=-1,
         )
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
@@ -590,7 +606,9 @@ def test_selector_rejects_an_unknown_importance_backend():
 def test_selector_accepts_a_callable_importance():
     frame = _selector_frame()
     selector = BorutaSelector(
-        feature_columns=FEATURES, n_repeats=2, importance=constant_importance([1.0, 0.0, 0.0]),
+        feature_columns=FEATURES,
+        n_repeats=2,
+        importance=constant_importance([1.0, 0.0, 0.0]),
         random_state=0,
     )
 
@@ -618,7 +636,7 @@ def test_selector_transform_keeps_metadata_and_selected_columns():
 
 
 def test_selector_transform_handles_nothing_clearing_the_threshold():
-    """"No feature is stable enough" is a real, correct outcome, not an
+    """ "No feature is stable enough" is a real, correct outcome, not an
     error case -- it is exactly what facedyn's own 31-feature set produces
     on the Paper 1 training data. `transform` must return the metadata
     columns and no features rather than raising."""
@@ -653,16 +671,21 @@ def test_selector_cluster_stability_rolls_frequencies_up_to_clusters():
     rng = np.random.default_rng(0)
     n = 150
     signal = rng.normal(size=n)
-    frame = pd.DataFrame({
-        "dup_a": signal,
-        "dup_b": signal + rng.normal(scale=0.01, size=n),
-        "noise": rng.normal(size=n),
-    })
+    frame = pd.DataFrame(
+        {
+            "dup_a": signal,
+            "dup_b": signal + rng.normal(scale=0.01, size=n),
+            "noise": rng.normal(size=n),
+        }
+    )
     frame["isfakeorreal"] = np.where(signal > 0, "fake", "real")
 
     selector = BorutaSelector(
-        feature_columns=["dup_a", "dup_b", "noise"], n_repeats=4,
-        importance="gini", n_estimators=50, random_state=0,
+        feature_columns=["dup_a", "dup_b", "noise"],
+        n_repeats=4,
+        importance="gini",
+        n_estimators=50,
+        random_state=0,
     )
     selector.fit(frame, frame["isfakeorreal"])
     clusters = selector.cluster_stability()
@@ -695,12 +718,14 @@ def test_boruta_feature_stats_ignores_the_minus_inf_sentinel():
     selector = _fit_selector(importance=constant_importance([1.0, 0.0, 0.0]))
     run = selector.runs_[0]
     # Craft a history with a known finite prefix and a rejected tail.
-    run.importance_history = np.array([
-        [0.5, 0.2, 0.1],
-        [0.6, 0.3, 0.2],
-        [0.4, 0.1, -np.inf],
-        [0.5, -np.inf, -np.inf],
-    ])
+    run.importance_history = np.array(
+        [
+            [0.5, 0.2, 0.1],
+            [0.6, 0.3, 0.2],
+            [0.4, 0.1, -np.inf],
+            [0.5, -np.inf, -np.inf],
+        ]
+    )
     run.shadow_history = np.array([[0.0, 0.0, 0.15]] * 4)
     run.decisions = np.array([CONFIRMED, TENTATIVE, REJECTED], dtype=object)
     run.rough_fixed_decisions = np.array([CONFIRMED, CONFIRMED, REJECTED], dtype=object)
@@ -723,12 +748,14 @@ def test_boruta_feature_stats_normhits_divides_by_total_iterations():
     short life."""
     selector = _fit_selector(importance=constant_importance([1.0, 0.0, 0.0]))
     run = selector.runs_[0]
-    run.importance_history = np.array([
-        [0.5, 0.2, 0.1],
-        [0.6, 0.3, 0.2],
-        [0.4, 0.1, -np.inf],
-        [0.5, -np.inf, -np.inf],
-    ])
+    run.importance_history = np.array(
+        [
+            [0.5, 0.2, 0.1],
+            [0.6, 0.3, 0.2],
+            [0.4, 0.1, -np.inf],
+            [0.5, -np.inf, -np.inf],
+        ]
+    )
     run.shadow_history = np.array([[0.0, 0.0, 0.15]] * 4)
     run.decisions = np.array([CONFIRMED, TENTATIVE, REJECTED], dtype=object)
     run.rough_fixed_decisions = np.array([CONFIRMED, CONFIRMED, REJECTED], dtype=object)
@@ -804,9 +831,7 @@ def test_plot_boruta_stability_marks_the_threshold():
 
     assert ax.get_xlim() == (0, 1)
     assert "informative" in [t.get_text() for t in ax.get_yticklabels()]
-    assert any(
-        line.get_xdata()[0] == selector.selection_threshold for line in ax.get_lines()
-    )
+    assert any(line.get_xdata()[0] == selector.selection_threshold for line in ax.get_lines())
 
 
 def test_plot_feature_clusters_renders_a_square_correlation_matrix():
@@ -841,14 +866,21 @@ def test_selector_handles_three_classes(importance):
     rng = np.random.default_rng(0)
     n = 150
     signal = rng.normal(size=n)
-    frame = pd.DataFrame({
-        "informative": signal,
-        "noise_a": rng.normal(size=n),
-        "noise_b": rng.normal(size=n),
-    })
+    frame = pd.DataFrame(
+        {
+            "informative": signal,
+            "noise_a": rng.normal(size=n),
+            "noise_b": rng.normal(size=n),
+        }
+    )
     frame["emotion"] = np.array(["angry", "happy", "sad"])[np.digitize(signal, [-0.5, 0.5])]
-    selector = BorutaSelector(feature_columns=FEATURES, n_repeats=2, importance=importance,
-                              n_estimators=50, random_state=0)
+    selector = BorutaSelector(
+        feature_columns=FEATURES,
+        n_repeats=2,
+        importance=importance,
+        n_estimators=50,
+        random_state=0,
+    )
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         selector.fit(frame, frame["emotion"])

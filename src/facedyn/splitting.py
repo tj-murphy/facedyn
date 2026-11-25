@@ -283,12 +283,7 @@ def group_report(
     video_to_group = _video_to_group(df, group_col, video_col)
     per_video = video_to_group.rename(group_col).reset_index()
 
-    report = (
-        per_video.groupby(group_col, sort=True)
-        .size()
-        .rename("n_videos")
-        .reset_index()
-    )
+    report = per_video.groupby(group_col, sort=True).size().rename("n_videos").reset_index()
     if label_col is None:
         return report
 
@@ -364,7 +359,9 @@ def paired_train_test_split(
         If a sampled source video's ``pair_col`` value does not match any
         video present in ``df`` (a broken pairing).
     """
-    source_rows = df.loc[df[label_col] == real_label, [video_col, pair_col]].drop_duplicates(video_col)
+    source_rows = df.loc[df[label_col] == real_label, [video_col, pair_col]].drop_duplicates(
+        video_col
+    )
     source_to_partner = dict(zip(source_rows[video_col], source_rows[pair_col], strict=True))
     source_videos = np.array(sorted(source_to_partner))
 
@@ -598,12 +595,13 @@ def pair_groups_from_filenames(
 
     using_default_rule = key_fn is None
     if key_fn is None:
+
         def key_fn(video_filename, label):
             return _deepfake_detection_pair_key(video_filename, label, real_label)
 
-    groups = np.array([
-        key_fn(video, label) for video, label in zip(df[video_col], df[label_col], strict=True)
-    ])
+    groups = np.array(
+        [key_fn(video, label) for video, label in zip(df[video_col], df[label_col], strict=True)]
+    )
 
     # Only the default rule promises that a derived key *is* a real video's
     # filename; a custom key_fn is free to invent ids of its own.
@@ -659,14 +657,14 @@ def pair_group_report(
     """
     groups = np.asarray(groups)
     if len(groups) != len(df):
-        raise ValueError(
-            f"groups has {len(groups)} entries but df has {len(df)} rows."
-        )
+        raise ValueError(f"groups has {len(groups)} entries but df has {len(df)} rows.")
 
-    per_video = pd.DataFrame({
-        "video": df[video_col].to_numpy(),
-        "group": groups,
-    }).drop_duplicates()
+    per_video = pd.DataFrame(
+        {
+            "video": df[video_col].to_numpy(),
+            "group": groups,
+        }
+    ).drop_duplicates()
     sizes = per_video.groupby("group").size()
 
     report = (

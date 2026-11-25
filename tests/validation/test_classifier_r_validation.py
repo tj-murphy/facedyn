@@ -125,7 +125,9 @@ def test_random_features_do_not_reach_the_selected_features_score(data):
     selected = make_classifier("random_forest", random_state=0, n_jobs=-1)
     selected.fit(data["train"][PAPER_8], data["train"]["isfakeorreal"])
     selected_auc = evaluate_models(
-        {"m": selected}, data["test"][PAPER_8], data["test"]["isfakeorreal"],
+        {"m": selected},
+        data["test"][PAPER_8],
+        data["test"]["isfakeorreal"],
         positive_label="fake",
     ).loc["m", "roc_auc"]
 
@@ -136,7 +138,9 @@ def test_random_features_do_not_reach_the_selected_features_score(data):
         model.fit(data["train"][columns], data["train"]["isfakeorreal"])
         random_aucs.append(
             evaluate_models(
-                {"m": model}, data["test"][columns], data["test"]["isfakeorreal"],
+                {"m": model},
+                data["test"][columns],
+                data["test"]["isfakeorreal"],
                 positive_label="fake",
             ).loc["m", "roc_auc"]
         )
@@ -152,7 +156,9 @@ def test_ungrouped_cross_validation_falls_below_chance_on_all_features(data):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # the missing-groups warning
         ungrouped = cross_validate_grouped(
-            model, data["train"][data["features"]], y,
+            model,
+            data["train"][data["features"]],
+            y,
             cv=StratifiedKFold(5, shuffle=True, random_state=0),
         )["roc_auc"].mean()
 
@@ -165,13 +171,20 @@ def test_grouping_by_pair_recovers_the_lost_signal(data):
     y = data["train"]["isfakeorreal"]
 
     grouped = cross_validate_grouped(
-        model, data["train"][data["features"]], y, groups=data["groups"],
-        n_splits=5, n_repeats=1, random_state=0,
+        model,
+        data["train"][data["features"]],
+        y,
+        groups=data["groups"],
+        n_splits=5,
+        n_repeats=1,
+        random_state=0,
     )["roc_auc"].mean()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
         ungrouped = cross_validate_grouped(
-            model, data["train"][data["features"]], y,
+            model,
+            data["train"][data["features"]],
+            y,
             cv=StratifiedKFold(5, shuffle=True, random_state=0),
         )["roc_auc"].mean()
 

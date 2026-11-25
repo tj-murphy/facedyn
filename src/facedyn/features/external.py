@@ -257,14 +257,18 @@ class RFeatureExtractor(TransformerMixin, BaseEstimator):
         converter = ro.default_converter + numpy2ri.converter + pandas2ri.converter
 
         if self.per_row:
+
             def _call(row):
                 with localconverter(converter):
                     result = r_fn(row.reshape(1, -1), **self.r_kwargs)
                     return pd.DataFrame(result).iloc[0]
 
             out = apply_rowwise(
-                X, _call, frame_pattern=self.frame_pattern,
-                n_jobs=self.n_jobs, verbose=self.verbose,
+                X,
+                _call,
+                frame_pattern=self.frame_pattern,
+                n_jobs=self.n_jobs,
+                verbose=self.verbose,
             )
         else:
             with localconverter(converter):

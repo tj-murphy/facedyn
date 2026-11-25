@@ -47,9 +47,7 @@ def _resolve_feature_columns(X: pd.DataFrame, feature_columns: list[str] | None)
     return [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
 
 
-def feature_diagnostics(
-    X: pd.DataFrame, feature_columns: list[str] | None = None
-) -> pd.DataFrame:
+def feature_diagnostics(X: pd.DataFrame, feature_columns: list[str] | None = None) -> pd.DataFrame:
     """Per-column report of NaN, Inf, and near-zero-variance issues.
 
     Read-only -- does not modify `X`. Safe to run on the output of any
@@ -142,8 +140,7 @@ def plot_feature_diagnostics(
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise ImportError(
-            "plot_feature_diagnostics requires matplotlib. Install with: "
-            "pip install facedyn[viz]"
+            "plot_feature_diagnostics requires matplotlib. Install with: pip install facedyn[viz]"
         ) from e
 
     ordered = report.sort_values(["pct_nan", "pct_inf"], ascending=True)
@@ -153,8 +150,11 @@ def plot_feature_diagnostics(
 
     ax.barh(ordered["column"], ordered["pct_nan"], color="#D55E00", label="NaN")
     ax.barh(
-        ordered["column"], ordered["pct_inf"], left=ordered["pct_nan"],
-        color="#0072B2", label="Inf",
+        ordered["column"],
+        ordered["pct_inf"],
+        left=ordered["pct_nan"],
+        color="#0072B2",
+        label="Inf",
     )
     ax.set_xlabel("Proportion of rows")
     ax.set_title("Feature diagnostics - missing / infinite values per column")

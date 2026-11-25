@@ -13,7 +13,6 @@ cleaner uses a SimpleImputer and the model a logistic regression, so the
 whole file runs in well under a minute.
 """
 
-
 from typing import ClassVar
 
 import numpy as np
@@ -45,8 +44,14 @@ pytestmark = pytest.mark.filterwarnings(
 )
 
 
-def make_frames(n_participants=12, videos_per_participant=4, classes=("a", "b"),
-                effect=1.0, seed=0, au_columns=AU_COLUMNS) -> pd.DataFrame:
+def make_frames(
+    n_participants=12,
+    videos_per_participant=4,
+    classes=("a", "b"),
+    effect=1.0,
+    seed=0,
+    au_columns=AU_COLUMNS,
+) -> pd.DataFrame:
     """Repeated-measures frame data: several videos per participant.
 
     Each participant has a per-AU baseline shared by all their videos (the
@@ -57,15 +62,16 @@ def make_frames(n_participants=12, videos_per_participant=4, classes=("a", "b"),
     parts = []
     for p in range(n_participants):
         baseline = rng.normal(scale=0.3, size=len(au_columns))
-        labels = rng.permutation(
-            [classes[v % len(classes)] for v in range(videos_per_participant)]
-        )
+        labels = rng.permutation([classes[v % len(classes)] for v in range(videos_per_participant)])
         for v, label in enumerate(labels):
             amplitude = 0.5 + effect * classes.index(label)
             phase = rng.uniform(0, np.pi)
             t = np.arange(N_FRAMES)[:, None]
-            values = (baseline + np.sin(t / 6 + phase) * amplitude
-                      + rng.normal(scale=0.15, size=(N_FRAMES, len(au_columns))))
+            values = (
+                baseline
+                + np.sin(t / 6 + phase) * amplitude
+                + rng.normal(scale=0.15, size=(N_FRAMES, len(au_columns)))
+            )
             video = pd.DataFrame(np.abs(values), columns=au_columns)
             video.insert(0, "frame", np.arange(N_FRAMES))
             video.insert(0, "label", label)
@@ -95,13 +101,15 @@ def frames():
 
 @pytest.fixture(scope="module")
 def binary_result(frames):
-    return cross_validate_pipeline(frames, "label", "participant", keep_bases=True,
-                                   keep_models=True, **fast_kwargs())
+    return cross_validate_pipeline(
+        frames, "label", "participant", keep_bases=True, keep_models=True, **fast_kwargs()
+    )
 
 
 # --------------------------------------------------------------------------
 # Out-of-fold predictions and grouping
 # --------------------------------------------------------------------------
+
 
 def test_every_video_is_predicted_exactly_once_per_repeat(frames, binary_result):
     oof = binary_result.oof
@@ -124,7 +132,14 @@ def test_oof_carries_true_labels_and_valid_probabilities(frames, binary_result):
     truth = frames.groupby("video_filename")["label"].first()
 
     assert list(oof.columns) == [
-        "video", "group", "repeat", "fold", "y_true", "y_pred", "proba_a", "proba_b"
+        "video",
+        "group",
+        "repeat",
+        "fold",
+        "y_true",
+        "y_pred",
+        "proba_a",
+        "proba_b",
     ]
     assert (oof["y_true"].to_numpy() == truth.loc[oof["video"]].to_numpy()).all()
     np.testing.assert_allclose(oof[["proba_a", "proba_b"]].sum(axis=1), 1.0)
@@ -160,6 +175,7 @@ def test_oof_metrics_do_not_depend_on_positive_label(binary_result):
 # --------------------------------------------------------------------------
 # Leakage
 # --------------------------------------------------------------------------
+
 
 class _Spy:
     """Records the videos each step's `fit` was given, in call order."""
@@ -210,7 +226,9 @@ class SpyModel(LogisticRegression):
 def test_every_fitted_step_sees_only_training_videos(frames):
     _Spy.calls = {}
     result = cross_validate_pipeline(
-        frames, "label", "participant",
+        frames,
+        "label",
+        "participant",
         normalizer=SpyNormalizer(),
         decomposer=SpyDecomposer(n_components=2, random_state=0),
         feature_extractor=SpyExtractor(),
@@ -227,7 +245,12 @@ def test_every_fitted_step_sees_only_training_videos(frames):
         for _, part in result.oof.groupby(["repeat", "fold"], sort=False)
     ]
     assert set(_Spy.calls) == {
-        "normalizer", "decomposer", "extractor", "cleaner", "selector", "model"
+        "normalizer",
+        "decomposer",
+        "extractor",
+        "cleaner",
+        "selector",
+        "model",
     }
     for step, calls in _Spy.calls.items():
         assert calls == expected_train, step
@@ -246,25 +269,34 @@ def test_selection_inside_folds_does_not_find_signal_in_noise():
     smoothed_cols = [f"smth_{c}" for c in au_columns]
 
     honest = cross_validate_pipeline(
-        frames, "label", "participant", decomposer=False,
+        frames,
+        "label",
+        "participant",
+        decomposer=False,
         **fast_kwargs(selector=SelectKBest(f_classif, k=10), cv=cv),
     )
 
     # The leaky reference: every step, including selection, fitted on all videos.
     normalised = ZScoreShiftNormalizer().fit_transform(RollingSmoother().fit_transform(frames))
-    wide = reshape_to_wide(normalised[["video_filename", "frame", *smoothed_cols]],
-                           value_cols=smoothed_cols, id_vars=[])
+    wide = reshape_to_wide(
+        normalised[["video_filename", "frame", *smoothed_cols]],
+        value_cols=smoothed_cols,
+        id_vars=[],
+    )
     extracted = TimeSeriesFeatureExtractor().fit_transform(wide)
     feature_cols = [c for c in extracted.columns if c not in ("video_filename", "series")]
     cleaner = FeatureCleaner(feature_columns=feature_cols, impute=SimpleImputer()).fit(extracted)
-    X = pivot_features_wide(cleaner.transform(extracted),
-                            feature_columns=list(cleaner.feature_names_out_),
-                            id_vars=[]).set_index("video_filename")
+    X = pivot_features_wide(
+        cleaner.transform(extracted), feature_columns=list(cleaner.feature_names_out_), id_vars=[]
+    ).set_index("video_filename")
     per_video = frames.groupby("video_filename")[["label", "participant"]].first().loc[X.index]
     kept = SelectKBest(f_classif, k=10).fit(X, per_video["label"]).get_feature_names_out()
     leaky = cross_validate_grouped(
-        make_classifier("logistic_regression"), X[kept], per_video["label"],
-        groups=per_video["participant"].to_numpy(), cv=cv,
+        make_classifier("logistic_regression"),
+        X[kept],
+        per_video["label"],
+        groups=per_video["participant"].to_numpy(),
+        cv=cv,
     )
 
     assert X.shape[1] > 200
@@ -279,10 +311,13 @@ def test_selection_inside_folds_does_not_find_signal_in_noise():
 # Equivalence with a hand-written loop
 # --------------------------------------------------------------------------
 
+
 def test_matches_a_manual_loop_without_selection(frames):
     cv = RepeatedStratifiedGroupKFold(n_splits=4, n_repeats=1, random_state=3)
     result = cross_validate_pipeline(
-        frames, "label", "participant",
+        frames,
+        "label",
+        "participant",
         decomposer=NMFDecomposer(n_components=2, random_state=0),
         **fast_kwargs(cv=cv),
     )
@@ -301,33 +336,42 @@ def test_matches_a_manual_loop_without_selection(frames):
 
         tables = []
         for side in (train, test):
-            wide = reshape_to_wide(side[["video_filename", "frame", *aus]], value_cols=aus,
-                                   id_vars=[])
+            wide = reshape_to_wide(
+                side[["video_filename", "frame", *aus]], value_cols=aus, id_vars=[]
+            )
             tables.append(TimeSeriesFeatureExtractor().fit_transform(wide))
         feature_cols = [c for c in tables[0].columns if c not in ("video_filename", "series")]
         cleaner = FeatureCleaner(feature_columns=feature_cols, impute=SimpleImputer())
         cleaner.fit(tables[0])
         X_train, X_test = (
-            pivot_features_wide(cleaner.transform(t), feature_columns=list(cleaner.feature_names_out_),
-                                id_vars=[]).set_index("video_filename").reindex(videos[idx])
+            pivot_features_wide(
+                cleaner.transform(t), feature_columns=list(cleaner.feature_names_out_), id_vars=[]
+            )
+            .set_index("video_filename")
+            .reindex(videos[idx])
             for t, idx in zip(tables, (train_idx, test_idx), strict=True)
         )
-        model = make_classifier("logistic_regression").fit(X_train, per_video["label"].iloc[train_idx])
+        model = make_classifier("logistic_regression").fit(
+            X_train, per_video["label"].iloc[train_idx]
+        )
         expected.append(pd.Series(model.predict_proba(X_test)[:, 1], index=X_test.index))
 
     expected = pd.concat(expected)
     got = result.oof.set_index("video")["proba_b"]
-    pd.testing.assert_series_equal(got, expected.loc[got.index], check_names=False,
-                                   check_index_type=False, rtol=1e-10)
+    pd.testing.assert_series_equal(
+        got, expected.loc[got.index], check_names=False, check_index_type=False, rtol=1e-10
+    )
 
 
 # --------------------------------------------------------------------------
 # Multiclass
 # --------------------------------------------------------------------------
 
+
 def test_three_classes():
-    frames = make_frames(n_participants=10, videos_per_participant=6,
-                         classes=("happy", "sad", "angry"), seed=1)
+    frames = make_frames(
+        n_participants=10, videos_per_participant=6, classes=("happy", "sad", "angry"), seed=1
+    )
     result = cross_validate_pipeline(frames, "label", "participant", **fast_kwargs())
 
     assert result.classes == ["angry", "happy", "sad"]
@@ -348,8 +392,9 @@ def test_three_class_oof_feeds_classification_metrics():
     """OOF predictions of one repeat give the full multiclass statistics."""
     from facedyn.evaluation import classification_metrics
 
-    frames = make_frames(n_participants=10, videos_per_participant=6,
-                         classes=("happy", "sad", "angry"), seed=1)
+    frames = make_frames(
+        n_participants=10, videos_per_participant=6, classes=("happy", "sad", "angry"), seed=1
+    )
     result = cross_validate_pipeline(frames, "label", "participant", **fast_kwargs())
     oof = result.oof[result.oof["repeat"] == 0]
     proba = oof[[f"proba_{c}" for c in result.classes]]
@@ -364,15 +409,20 @@ def test_three_class_oof_feeds_classification_metrics():
 @pytest.mark.slow
 def test_three_classes_with_boruta_and_random_forest():
     """The default selector and model families handle three classes."""
-    frames = make_frames(n_participants=8, videos_per_participant=6,
-                         classes=("happy", "sad", "angry"), seed=2)
+    frames = make_frames(
+        n_participants=8, videos_per_participant=6, classes=("happy", "sad", "angry"), seed=2
+    )
     result = cross_validate_pipeline(
-        frames, "label", "participant",
+        frames,
+        "label",
+        "participant",
         **fast_kwargs(
-            selector=BorutaSelector(n_repeats=2, n_estimators=50, importance="gini",
-                                    max_iter=20, random_state=0),
-            model=make_classifier("random_forest", preset="default", random_state=0,
-                                  n_estimators=50),
+            selector=BorutaSelector(
+                n_repeats=2, n_estimators=50, importance="gini", max_iter=20, random_state=0
+            ),
+            model=make_classifier(
+                "random_forest", preset="default", random_state=0, n_estimators=50
+            ),
             cv=RepeatedStratifiedGroupKFold(n_splits=4, n_repeats=1, random_state=0),
         ),
     )
@@ -385,6 +435,7 @@ def test_three_classes_with_boruta_and_random_forest():
 # --------------------------------------------------------------------------
 # Selection records
 # --------------------------------------------------------------------------
+
 
 def test_selected_aus_record_each_folds_choice(binary_result):
     aus = binary_result.selected_aus
@@ -443,7 +494,9 @@ def test_empty_selection_warns_and_predicts_class_frequencies(frames):
 
     with pytest.warns(UserWarning, match="kept no features in 8 of 8 folds"):
         result = cross_validate_pipeline(
-            frames, "label", "participant",
+            frames,
+            "label",
+            "participant",
             **fast_kwargs(selector=SelectNothing(f_classif, k=1)),
         )
     np.testing.assert_allclose(result.oof["proba_a"], 0.5)
@@ -452,6 +505,7 @@ def test_empty_selection_warns_and_predicts_class_frequencies(frames):
 # --------------------------------------------------------------------------
 # Alternative routes through the pipeline
 # --------------------------------------------------------------------------
+
 
 def test_nmf_activations_instead_of_representative_aus(frames):
     result = cross_validate_pipeline(
@@ -465,8 +519,9 @@ def test_nmf_activations_instead_of_representative_aus(frames):
 
 
 def test_without_decomposer_uses_every_normalised_au(frames):
-    result = cross_validate_pipeline(frames, "label", "participant", decomposer=False,
-                                     **fast_kwargs())
+    result = cross_validate_pipeline(
+        frames, "label", "participant", decomposer=False, **fast_kwargs()
+    )
     features = set(result.selected_features["feature"])
     for au in AU_COLUMNS:
         assert f"mean_smth_{au}" in features
@@ -475,8 +530,14 @@ def test_without_decomposer_uses_every_normalised_au(frames):
 def test_already_smoothed_input_with_explicit_series(frames):
     smoothed = RollingSmoother().fit_transform(frames)
     result = cross_validate_pipeline(
-        smoothed, "label", "participant", smoother=False, normalizer=False,
-        decomposer=False, series_columns=["smth_AU12_r"], **fast_kwargs(),
+        smoothed,
+        "label",
+        "participant",
+        smoother=False,
+        normalizer=False,
+        decomposer=False,
+        series_columns=["smth_AU12_r"],
+        **fast_kwargs(),
     )
     assert result.selected_features["feature"].str.endswith("_smth_AU12_r").all()
     assert result.summary().loc["roc_auc", "mean"] > 0.9
@@ -484,27 +545,37 @@ def test_already_smoothed_input_with_explicit_series(frames):
 
 def test_all_frame_steps_off_needs_series_columns(frames):
     with pytest.raises(ValueError, match="series_columns"):
-        cross_validate_pipeline(frames, "label", "participant", smoother=False,
-                                normalizer=False, decomposer=False, **fast_kwargs())
+        cross_validate_pipeline(
+            frames,
+            "label",
+            "participant",
+            smoother=False,
+            normalizer=False,
+            decomposer=False,
+            **fast_kwargs(),
+        )
 
 
 # --------------------------------------------------------------------------
 # Inputs
 # --------------------------------------------------------------------------
 
+
 def test_labels_and_groups_as_series_match_column_names(frames, binary_result):
     per_video = frames.groupby("video_filename")[["label", "participant"]].first()
     result = cross_validate_pipeline(
         frames.drop(columns=["label", "participant"]),
-        per_video["label"], per_video["participant"],
-        keep_bases=True, keep_models=True, **fast_kwargs(),
+        per_video["label"],
+        per_video["participant"],
+        keep_bases=True,
+        keep_models=True,
+        **fast_kwargs(),
     )
     pd.testing.assert_frame_equal(result.oof, binary_result.oof)
 
 
 def test_parallel_folds_match_sequential(frames, binary_result):
-    result = cross_validate_pipeline(frames, "label", "participant", n_jobs=2,
-                                     **fast_kwargs())
+    result = cross_validate_pipeline(frames, "label", "participant", n_jobs=2, **fast_kwargs())
     pd.testing.assert_frame_equal(result.oof, binary_result.oof)
     pd.testing.assert_frame_equal(result.scores, binary_result.scores)
 
@@ -535,8 +606,7 @@ def test_bad_inputs_raise(frames):
     with pytest.raises(ValueError, match="at least two classes"):
         cross_validate_pipeline(frames.assign(label="a"), "label", "participant")
     with pytest.raises(TypeError, match="predict_proba"):
-        cross_validate_pipeline(frames, "label", "participant",
-                                model=SVC(probability=False))
+        cross_validate_pipeline(frames, "label", "participant", model=SVC(probability=False))
 
 
 def test_result_type(binary_result):

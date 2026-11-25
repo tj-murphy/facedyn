@@ -74,13 +74,15 @@ def make_paired_dataset(n_pairs: int = 30, seed: int = 0):
         identity = rng.normal(scale=4)
         for label in ("real", "fake"):
             signal = 0.7 if label == "fake" else -0.7
-            rows.append({
-                "video_filename": f"{label}_{i}",
-                "corresponding_video": f"{'fake' if label == 'real' else 'real'}_{i}",
-                "isfakeorreal": label,
-                "f0": signal + rng.normal(scale=1.0),
-                "f1": identity + rng.normal(scale=0.05),
-            })
+            rows.append(
+                {
+                    "video_filename": f"{label}_{i}",
+                    "corresponding_video": f"{'fake' if label == 'real' else 'real'}_{i}",
+                    "isfakeorreal": label,
+                    "f0": signal + rng.normal(scale=1.0),
+                    "f1": identity + rng.normal(scale=0.05),
+                }
+            )
     df = pd.DataFrame(rows)
     return df, df[["f0", "f1"]], df["isfakeorreal"].to_numpy()
 
@@ -284,8 +286,9 @@ def test_evaluate_models_returns_a_row_per_model():
 
 def test_evaluate_models_requires_a_positive_label_for_string_classes():
     df, X, y = make_paired_dataset(n_pairs=10)
-    models = {"random_forest": make_classifier("random_forest", random_state=0,
-                                               n_estimators=10).fit(X, y)}
+    models = {
+        "random_forest": make_classifier("random_forest", random_state=0, n_estimators=10).fit(X, y)
+    }
     with pytest.raises(ValueError, match="positive_label is required"):
         evaluate_models(models, X, y)
 
@@ -312,8 +315,14 @@ def test_cross_validate_grouped_accepts_several_metrics():
     model = make_classifier("random_forest", random_state=0, n_estimators=25)
 
     scores = cross_validate_grouped(
-        model, X, y, groups=pair_groups(df), scoring=["roc_auc", "accuracy"],
-        n_splits=3, n_repeats=1, random_state=0,
+        model,
+        X,
+        y,
+        groups=pair_groups(df),
+        scoring=["roc_auc", "accuracy"],
+        n_splits=3,
+        n_repeats=1,
+        random_state=0,
     )
     assert list(scores.columns) == ["roc_auc", "accuracy"]
 
@@ -345,9 +354,9 @@ def test_grouped_cv_beats_ungrouped_on_paired_data():
     )["roc_auc"].mean()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
-        ungrouped = cross_validate_grouped(
-            model, X, y, n_splits=5, n_repeats=2, random_state=0
-        )["roc_auc"].mean()
+        ungrouped = cross_validate_grouped(model, X, y, n_splits=5, n_repeats=2, random_state=0)[
+            "roc_auc"
+        ].mean()
 
     assert grouped - ungrouped > 0.03
 
@@ -444,14 +453,16 @@ def make_three_class(n_per_class: int = 40, separation: float = 1.5, seed: int =
     rows = []
     for label, (cx, cy) in centres.items():
         for i in range(n_per_class):
-            rows.append({
-                "video_filename": f"{label}_{i}",
-                "participant": f"p{i % 10}",
-                "emotion": label,
-                "f0": cx + rng.normal(),
-                "f1": cy + rng.normal(),
-                "f2": rng.normal(),
-            })
+            rows.append(
+                {
+                    "video_filename": f"{label}_{i}",
+                    "participant": f"p{i % 10}",
+                    "emotion": label,
+                    "f0": cx + rng.normal(),
+                    "f1": cy + rng.normal(),
+                    "f2": rng.normal(),
+                }
+            )
     df = pd.DataFrame(rows)
     return df, df[["f0", "f1", "f2"]], df["emotion"].to_numpy()
 
@@ -515,7 +526,7 @@ def test_multiclass_metrics_count_a_never_predicted_class_as_zero_f1():
 def test_multiclass_auc_is_nan_for_a_class_missing_from_the_reference():
     y_true = np.array(["a", "a", "b", "b"])
     y_pred = np.array(["a", "b", "b", "b"])
-    proba = np.array([[.8, .1, .1], [.4, .5, .1], [.1, .8, .1], [.2, .7, .1]])
+    proba = np.array([[0.8, 0.1, 0.1], [0.4, 0.5, 0.1], [0.1, 0.8, 0.1], [0.2, 0.7, 0.1]])
     m = classification_metrics(y_true, y_pred, proba, labels=["a", "b", "c"])
     assert np.isnan(m["roc_auc_c"])
     assert np.isnan(m["roc_auc"])
@@ -624,9 +635,7 @@ def test_pairwise_contrasts_feed_binary_delong(three_class_fit):
     for (_a, b), subset in pairwise_contrasts(df, "emotion").items():
         Xs, ys = subset[["f0", "f1", "f2"]], subset["emotion"].to_numpy()
         model = make_classifier("random_forest", random_state=0, n_estimators=20).fit(Xs, ys)
-        auc, lower, upper = roc_auc_delong_ci(
-            ys, model.predict_proba(Xs)[:, 1], positive_label=b
-        )
+        auc, lower, upper = roc_auc_delong_ci(ys, model.predict_proba(Xs)[:, 1], positive_label=b)
         assert lower <= auc <= upper
 
 
@@ -692,8 +701,13 @@ def test_plot_confusion_matrix_prediction_normalisation_matches_true():
 
 
 def test_plot_confusion_matrix_handles_a_never_predicted_class():
-    ax = plot_confusion_matrix(["a", "b", "c"], ["a", "b", "b"], labels=["a", "b", "c"],
-                               normalize=True, annotate="proportion")
+    ax = plot_confusion_matrix(
+        ["a", "b", "c"],
+        ["a", "b", "b"],
+        labels=["a", "b", "c"],
+        normalize=True,
+        annotate="proportion",
+    )
     assert np.isfinite(np.asarray(ax.images[0].get_array())).all()
     plt.close(ax.figure)
 

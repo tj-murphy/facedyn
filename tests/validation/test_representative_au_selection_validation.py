@@ -24,12 +24,23 @@ from facedyn.representative_aus import select_representative_aus
 FIXTURES = Path(__file__).parent / "fixtures"
 
 AU_NAMES = [
-    "AU01_inner_brow_raiser", "AU02_outer_brow_raiser", "AU04_brow_lowerer",
-    "AU05_upper_lid_raiser", "AU06_cheek_raiser", "AU07_lid_tightener",
-    "AU09_nose_wrinkler", "AU10_upper_lip_raiser", "AU12_lip_corner_puller",
-    "AU14_dimpler", "AU15_lip_corner_depressor", "AU17_chin_raiser",
-    "AU20_lip_stretcher", "AU23_lip_tightener", "AU25_lips_part",
-    "AU26_jaw_drop", "AU45_blink",
+    "AU01_inner_brow_raiser",
+    "AU02_outer_brow_raiser",
+    "AU04_brow_lowerer",
+    "AU05_upper_lid_raiser",
+    "AU06_cheek_raiser",
+    "AU07_lid_tightener",
+    "AU09_nose_wrinkler",
+    "AU10_upper_lip_raiser",
+    "AU12_lip_corner_puller",
+    "AU14_dimpler",
+    "AU15_lip_corner_depressor",
+    "AU17_chin_raiser",
+    "AU20_lip_stretcher",
+    "AU23_lip_tightener",
+    "AU25_lips_part",
+    "AU26_jaw_drop",
+    "AU45_blink",
 ]
 
 

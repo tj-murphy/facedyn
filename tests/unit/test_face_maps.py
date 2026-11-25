@@ -155,7 +155,8 @@ def test_face_map_shades_the_region_matching_the_dominant_au(monkeypatch):
     import facedyn.face_maps as face_maps
 
     monkeypatch.setattr(
-        face_maps, "_predict_landmarks",
+        face_maps,
+        "_predict_landmarks",
         lambda au: (_NEUTRAL_X, _NEUTRAL_Y),
     )
 
@@ -218,7 +219,8 @@ def test_orb_oc_l_region_shaded_by_au07(monkeypatch):
     import facedyn.face_maps as face_maps
 
     monkeypatch.setattr(
-        face_maps, "_predict_landmarks",
+        face_maps,
+        "_predict_landmarks",
         lambda au: (_NEUTRAL_X, _NEUTRAL_Y),
     )
 
@@ -251,7 +253,8 @@ def test_normalize_false_uses_raw_component_values(monkeypatch):
     import facedyn.face_maps as face_maps
 
     monkeypatch.setattr(
-        face_maps, "_predict_landmarks",
+        face_maps,
+        "_predict_landmarks",
         lambda au: (_NEUTRAL_X, _NEUTRAL_Y),
     )
 
@@ -276,6 +279,7 @@ def test_normalize_false_uses_raw_component_values(monkeypatch):
     # Only one nonzero entry -> normalized view maxes it out to the top of
     # the colormap regardless of its raw magnitude; raw view doesn't.
     import matplotlib.pyplot as plt
+
     colormap = plt.get_cmap("Blues")
     assert facecolor_for(axes_normalized) is not None
     assert not np.allclose(facecolor_for(axes_raw), colormap(1.0), atol=1e-6)

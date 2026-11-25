@@ -58,14 +58,17 @@ def load(path: Path) -> tuple[pd.DataFrame, np.ndarray, list[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--n-repeats", type=int, default=3,
-                        help="sub-train/validation splits, one Boruta fit each")
-    parser.add_argument("--boruta-repeats", type=int, default=20,
-                        help="seeds per Boruta fit")
+    parser.add_argument(
+        "--n-repeats", type=int, default=3, help="sub-train/validation splits, one Boruta fit each"
+    )
+    parser.add_argument("--boruta-repeats", type=int, default=20, help="seeds per Boruta fit")
     parser.add_argument("--jobs", type=int, default=-1, help="n_jobs inside each fit")
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--fast", action="store_true",
-                        help="gini importance and 8 runs: a quick look, not R's measure")
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="gini importance and 8 runs: a quick look, not R's measure",
+    )
     parser.add_argument("--out", type=Path, default=REPO / "tools" / "threshold_tuning")
     args = parser.parse_args()
 
@@ -90,7 +93,9 @@ def main() -> None:
     # those numbers are meant to be read against the published ones.
     started = time.time()
     result = tune_selection_threshold(
-        train, y_train, groups,
+        train,
+        y_train,
+        groups,
         selector=selector,
         positive_label=POSITIVE,
         n_repeats=args.n_repeats,
@@ -102,8 +107,10 @@ def main() -> None:
     print(f"\ntuning finished in {elapsed / 60:.1f} min")
     print(result.curve_.to_string(index=False))
     print(f"\nrule={result.rule_}  chosen threshold={result.best_threshold_:g}")
-    print(f"validation {result.scoring_}={result.best_score_:.4f} "
-          f"(selection score, NOT a generalisation estimate)")
+    print(
+        f"validation {result.scoring_}={result.best_score_:.4f} "
+        f"(selection score, NOT a generalisation estimate)"
+    )
     print(f"features kept on all {len(train)}: {len(result.selected_columns_)}")
     for column in result.selected_columns_[:25]:
         print(f"  {column}")
@@ -111,9 +118,7 @@ def main() -> None:
         print(f"  ... and {len(result.selected_columns_) - 25} more (see summary.json)")
 
     result.curve_.to_csv(args.out / "curve.csv", index=False)
-    result.per_split_.drop(columns="features").to_csv(
-        args.out / "per_split.csv", index=False
-    )
+    result.per_split_.drop(columns="features").to_csv(args.out / "per_split.csv", index=False)
     plot_threshold_sweep(
         result, show_splits=True, save_path="threshold_sweep.png", output_dir=args.out
     )
@@ -149,15 +154,18 @@ def main() -> None:
         "roc_auc": float(metrics["roc_auc"]),
         "accuracy": float(metrics["accuracy"]),
     }
-    print(f"tuned threshold {result.best_threshold_:g}: "
-          f"{len(chosen)} features, ROC-AUC {metrics['roc_auc']:.4f}, "
-          f"accuracy {metrics['accuracy']:.4f}")
+    print(
+        f"tuned threshold {result.best_threshold_:g}: "
+        f"{len(chosen)} features, ROC-AUC {metrics['roc_auc']:.4f}, "
+        f"accuracy {metrics['accuracy']:.4f}"
+    )
 
     # The same comparison for the thresholds already on record, so the
     # tuned choice can be read against them rather than in isolation.
     for reference in (0.8, 0.5, 0.25):
         columns = [
-            f for f in result.selector_.feature_columns_
+            f
+            for f in result.selector_.feature_columns_
             if result.selector_.selection_frequency_[f] >= reference
         ]
         if not columns:
@@ -166,9 +174,7 @@ def main() -> None:
             continue
         other = make_classifier("random_forest", random_state=args.seed)
         other.fit(train[columns], y_train)
-        other_scores = other.predict_proba(test[columns])[
-            :, list(other.classes_).index(POSITIVE)
-        ]
+        other_scores = other.predict_proba(test[columns])[:, list(other.classes_).index(POSITIVE)]
         other_metrics = classification_metrics(
             y_test, other.predict(test[columns]), other_scores, positive_label=POSITIVE
         )
@@ -177,9 +183,11 @@ def main() -> None:
             "roc_auc": float(other_metrics["roc_auc"]),
             "accuracy": float(other_metrics["accuracy"]),
         }
-        print(f"reference threshold {reference:g}: {len(columns)} features, "
-              f"ROC-AUC {other_metrics['roc_auc']:.4f}, "
-              f"accuracy {other_metrics['accuracy']:.4f}")
+        print(
+            f"reference threshold {reference:g}: {len(columns)} features, "
+            f"ROC-AUC {other_metrics['roc_auc']:.4f}, "
+            f"accuracy {other_metrics['accuracy']:.4f}"
+        )
 
     (args.out / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"\nwritten to {args.out}")

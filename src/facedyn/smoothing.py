@@ -66,9 +66,7 @@ class RollingSmoother(TransformerMixin, BaseEstimator):
         grouped = X.groupby(self.group_col)
         result = X.copy()
         for col in columns:
-            result[f"{self.prefix}{col}"] = grouped[col].transform(
-                self._rolling_mean_left_extend
-            )
+            result[f"{self.prefix}{col}"] = grouped[col].transform(self._rolling_mean_left_extend)
         return result
 
     def _resolve_columns(self, X: pd.DataFrame) -> list[str]:
@@ -79,9 +77,7 @@ class RollingSmoother(TransformerMixin, BaseEstimator):
 
     def _rolling_mean_left_extend(self, series: pd.Series) -> pd.Series:
         reversed_series = series[::-1]
-        rolled = reversed_series.rolling(
-            window=self.window, min_periods=self.window
-        ).mean()[::-1]
+        rolled = reversed_series.rolling(window=self.window, min_periods=self.window).mean()[::-1]
         return rolled.ffill().bfill()
 
 
@@ -149,8 +145,7 @@ def plot_smoothing_comparison(
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise ImportError(
-            "plot_smoothing_comparison requires matplotlib. Install with: "
-            "pip install facedyn[viz]"
+            "plot_smoothing_comparison requires matplotlib. Install with: pip install facedyn[viz]"
         ) from e
 
     if mode not in ("stacked", "overlay"):
@@ -166,12 +161,19 @@ def plot_smoothing_comparison(
         if ax is None:
             _, ax = plt.subplots()
         ax.plot(
-            video_data[frame_col], video_data[column],
-            color=raw_color, alpha=0.6, linewidth=1, label="Raw",
+            video_data[frame_col],
+            video_data[column],
+            color=raw_color,
+            alpha=0.6,
+            linewidth=1,
+            label="Raw",
         )
         ax.plot(
-            video_data[frame_col], video_data[smoothed_column],
-            color=smoothed_color, linewidth=1.5, label="Smoothed",
+            video_data[frame_col],
+            video_data[smoothed_column],
+            color=smoothed_color,
+            linewidth=1.5,
+            label="Smoothed",
         )
         ax.set_xlabel(frame_col)
         ax.set_ylabel(column)
@@ -186,8 +188,10 @@ def plot_smoothing_comparison(
     raw_ax.set_title(f"Raw ({video_filename})")
 
     smoothed_ax.plot(
-        video_data[frame_col], video_data[smoothed_column],
-        color=smoothed_color, linewidth=1,
+        video_data[frame_col],
+        video_data[smoothed_column],
+        color=smoothed_color,
+        linewidth=1,
     )
     smoothed_ax.set_xlabel(frame_col)
     smoothed_ax.set_ylabel(column)

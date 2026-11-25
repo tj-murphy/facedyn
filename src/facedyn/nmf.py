@@ -34,9 +34,7 @@ __all__ = [
 ]
 
 
-def _resolve_columns(
-    X: pd.DataFrame, columns: list[str] | None, column_pattern: str
-) -> list[str]:
+def _resolve_columns(X: pd.DataFrame, columns: list[str] | None, column_pattern: str) -> list[str]:
     if columns is not None:
         return list(columns)
     pattern = re.compile(column_pattern)
@@ -107,8 +105,11 @@ def nmf_rank_mse_sweep(
     records = []
     for k in ranks:
         model = NMF(
-            n_components=k, init="nndsvda", random_state=random_state,
-            max_iter=max_iter, tol=tol,
+            n_components=k,
+            init="nndsvda",
+            random_state=random_state,
+            max_iter=max_iter,
+            tol=tol,
         )
         W = model.fit_transform(data)
         H = model.components_
@@ -264,8 +265,12 @@ def nmf_rank_cv_sweep(
                 try:
                     init_seed = None if seed_state is None else seed_state + rep * 1000 + k
                     W, H = _masked_nmf(
-                        data, mask, n_components=k,
-                        max_iter=max_iter, tol=tol, random_state=init_seed,
+                        data,
+                        mask,
+                        n_components=k,
+                        max_iter=max_iter,
+                        tol=tol,
+                        random_state=init_seed,
                     )
                     recon = W @ H
                     train_mse = ((mask * (data - recon)) ** 2).sum() / mask.sum()
@@ -332,16 +337,17 @@ def plot_nmf_rank_cv(
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise ImportError(
-            "plot_nmf_rank_cv requires matplotlib. Install with: "
-            "pip install facedyn[viz]"
+            "plot_nmf_rank_cv requires matplotlib. Install with: pip install facedyn[viz]"
         ) from e
 
     if ax is None:
         _, ax = plt.subplots()
 
-    agg = result.groupby("rank")[["train_mse", "test_mse"]].agg(
-        "median" if robust else "mean"
-    ).reset_index()
+    agg = (
+        result.groupby("rank")[["train_mse", "test_mse"]]
+        .agg("median" if robust else "mean")
+        .reset_index()
+    )
     colors = {"train_mse": "#009E73", "test_mse": "#D55E00"}
     labels = {"train_mse": "Train", "test_mse": "Test"}
 
@@ -377,14 +383,23 @@ def plot_nmf_rank_cv(
                 has_outliers = True
                 off_scale = rep_data[is_outlier]
                 ax.scatter(
-                    off_scale["rank"], [y_top] * len(off_scale), color=color,
-                    marker="^", s=70, zorder=4, edgecolor="black", linewidth=0.5,
+                    off_scale["rank"],
+                    [y_top] * len(off_scale),
+                    color=color,
+                    marker="^",
+                    s=70,
+                    zorder=4,
+                    edgecolor="black",
+                    linewidth=0.5,
                 )
                 for _, row in off_scale.iterrows():
                     ax.annotate(
-                        f"{row[col]:.0f}", (row["rank"], y_top),
-                        textcoords="offset points", xytext=(4, 4),
-                        fontsize=7, color=color,
+                        f"{row[col]:.0f}",
+                        (row["rank"], y_top),
+                        textcoords="offset points",
+                        xytext=(4, 4),
+                        fontsize=7,
+                        color=color,
                     )
         ax.plot(agg["rank"], agg[col], color=color, linewidth=2.2, label=labels[col])
         ax.scatter(agg["rank"], agg[col], color=color, s=40, zorder=3)
@@ -479,8 +494,11 @@ def nmf_cophenetic_correlation(
     def _dominant_labels(k: int, run: int) -> np.ndarray:
         seed = None if random_state is None else random_state + run * 1000 + k
         model = NMF(
-            n_components=k, init="random", random_state=seed,
-            max_iter=max_iter, tol=tol,
+            n_components=k,
+            init="random",
+            random_state=seed,
+            max_iter=max_iter,
+            tol=tol,
         )
         W = model.fit_transform(data)
         return W.argmax(axis=1)
@@ -496,7 +514,7 @@ def nmf_cophenetic_correlation(
     for k in ranks:
         consensus = np.zeros((n_samples, n_samples))
         for dominant in labels_by_rank[k]:
-            consensus += (dominant[:, None] == dominant[None, :])
+            consensus += dominant[:, None] == dominant[None, :]
         consensus /= n_runs
 
         condensed = squareform(1.0 - consensus, checks=False)
@@ -553,8 +571,11 @@ def plot_nmf_cophenetic_correlation(
 
     result = result.sort_values("rank")
     ax.plot(
-        result["rank"], result["cophenetic_correlation"],
-        color="#0072B2", marker="o", linewidth=2,
+        result["rank"],
+        result["cophenetic_correlation"],
+        color="#0072B2",
+        marker="o",
+        linewidth=2,
     )
     ax.set_xlabel("Rank (k)")
     ax.set_ylabel("Cophenetic correlation")
@@ -704,8 +725,7 @@ def plot_nmf_basis_heatmap(
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise ImportError(
-            "plot_nmf_basis_heatmap requires matplotlib. Install with: "
-            "pip install facedyn[viz]"
+            "plot_nmf_basis_heatmap requires matplotlib. Install with: pip install facedyn[viz]"
         ) from e
 
     check_is_fitted(decomposer, "components_")
@@ -800,9 +820,7 @@ def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.D
     """
     original, reconstructed = _reconstruct(decomposer, X)
     metrics = _reconstruction_metrics(original, reconstructed)
-    return pd.DataFrame(
-        {"metric": list(metrics.keys()), "value": list(metrics.values())}
-    )
+    return pd.DataFrame({"metric": list(metrics.keys()), "value": list(metrics.values())})
 
 
 def nmf_reconstruction_r2_per_au(
@@ -904,8 +922,7 @@ def plot_nmf_reconstruction(
         import matplotlib.pyplot as plt
     except ImportError as e:
         raise ImportError(
-            "plot_nmf_reconstruction requires matplotlib. Install with: "
-            "pip install facedyn[viz]"
+            "plot_nmf_reconstruction requires matplotlib. Install with: pip install facedyn[viz]"
         ) from e
 
     if au is None:
@@ -925,19 +942,28 @@ def plot_nmf_reconstruction(
         _, ax = plt.subplots()
 
     ax.plot(
-        frames.to_numpy()[order], original[rows, au_idx][order],
-        color="#009E73", alpha=0.6, linewidth=1, label="Original",
+        frames.to_numpy()[order],
+        original[rows, au_idx][order],
+        color="#009E73",
+        alpha=0.6,
+        linewidth=1,
+        label="Original",
     )
     ax.plot(
-        frames.to_numpy()[order], reconstructed[rows, au_idx][order],
-        color="#D55E00", linewidth=1.5, label="Reconstructed",
+        frames.to_numpy()[order],
+        reconstructed[rows, au_idx][order],
+        color="#D55E00",
+        linewidth=1.5,
+        label="Reconstructed",
     )
     ax.set_xlabel(frame_col)
     ax.set_ylabel(au_label)
     # Two lines plus `wrap`: a long AU label and/or video_id easily overflow
     # a single line, and `wrap` catches whatever the explicit split doesn't.
     ax.set_title(
-        f"{au_label}\nOriginal vs. Reconstructed ({video_id})", fontsize=9, wrap=True,
+        f"{au_label}\nOriginal vs. Reconstructed ({video_id})",
+        fontsize=9,
+        wrap=True,
     )
     ax.legend()
     save_figure(ax.figure, save_path, output_dir, dpi)
@@ -1029,8 +1055,14 @@ def plot_nmf_reconstruction_extremes(
     for target_ax, au, role in zip(axes, [best_au, worst_au], ["Best", "Worst"], strict=True):
         au_label = humanise_au_label(au) if humanise else au
         plot_nmf_reconstruction(
-            decomposer, X, au=au, video_id=video_id,
-            group_col=group_col, frame_col=frame_col, au_label=au_label, ax=target_ax,
+            decomposer,
+            X,
+            au=au,
+            video_id=video_id,
+            group_col=group_col,
+            frame_col=frame_col,
+            au_label=au_label,
+            ax=target_ax,
         )
         title = target_ax.get_title()
         target_ax.set_title(f"{role}: {title}", fontsize=9, wrap=True)

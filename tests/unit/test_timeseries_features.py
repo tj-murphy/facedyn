@@ -255,19 +255,42 @@ def test_constant_series_is_nan_where_undefined_and_finite_where_not():
     result = extract_features(np.full(120, 0.5))
 
     undefined = [
-        "skewness", "kurtosis", "acf1", "acf2", "acf10_sumsq", "pacf1",
-        "pacf5_sumsq", "diff1_sd", "mean_abs_diff", "trend_slope", "trend_r2",
-        "mean_crossings", "longest_run_above_mean", "sample_entropy",
-        "permutation_entropy", "spectral_entropy", "mean_episode_len",
-        "max_episode_len", "mean_onset_slope", "mean_offset_slope",
+        "skewness",
+        "kurtosis",
+        "acf1",
+        "acf2",
+        "acf10_sumsq",
+        "pacf1",
+        "pacf5_sumsq",
+        "diff1_sd",
+        "mean_abs_diff",
+        "trend_slope",
+        "trend_r2",
+        "mean_crossings",
+        "longest_run_above_mean",
+        "sample_entropy",
+        "permutation_entropy",
+        "spectral_entropy",
+        "mean_episode_len",
+        "max_episode_len",
+        "mean_onset_slope",
+        "mean_offset_slope",
     ]
     for name in undefined:
         assert np.isnan(result[name]), f"{name} should be NaN for a constant series"
 
     still_defined = {
-        "mean": 0.5, "sd": 0.0, "min": 0.5, "max": 0.5, "range": 0.0,
-        "median": 0.5, "iqr": 0.0, "prop_active": 0.0, "n_episodes": 0.0,
-        "peak_rate": 0.0, "length": 120.0,
+        "mean": 0.5,
+        "sd": 0.0,
+        "min": 0.5,
+        "max": 0.5,
+        "range": 0.0,
+        "median": 0.5,
+        "iqr": 0.0,
+        "prop_active": 0.0,
+        "n_episodes": 0.0,
+        "peak_rate": 0.0,
+        "length": 120.0,
     }
     for name, expected in still_defined.items():
         assert result[name] == pytest.approx(expected), f"{name} should stay defined"
@@ -308,12 +331,14 @@ def test_very_short_series_returns_nan_not_a_crash():
 
 def make_wide(n_rows: int = 3, n_frames: int = 80, seed: int = 0) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
-    return pd.DataFrame({
-        "video_filename": [f"v{i}" for i in range(n_rows)],
-        "isfakeorreal": ["real"] * n_rows,
-        "series": ["smth_AU01_r"] * n_rows,
-        **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
-    })
+    return pd.DataFrame(
+        {
+            "video_filename": [f"v{i}" for i in range(n_rows)],
+            "isfakeorreal": ["real"] * n_rows,
+            "series": ["smth_AU01_r"] * n_rows,
+            **{f"fr_{j + 1}": rng.random(n_rows) for j in range(n_frames)},
+        }
+    )
 
 
 def test_extract_timeseries_features_carries_metadata_and_adds_features():

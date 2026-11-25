@@ -64,6 +64,7 @@ def linear_data():
 # Estimator correctness
 # --------------------------------------------------------------------------
 
+
 def test_hand_computed_curve_for_square():
     X = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0, 4.0]})
     model = FunctionModel(lambda d: d["x"].to_numpy() ** 2)
@@ -123,6 +124,7 @@ def test_ale_is_not_fooled_by_correlated_features():
 # Classifiers
 # --------------------------------------------------------------------------
 
+
 def test_binary_classifier_traces_positive_class_by_default(linear_data):
     X, y = linear_data
     labels = np.where(y > y.median(), "high", "low")
@@ -162,6 +164,7 @@ def test_numpy_input_passes_arrays_to_the_model(linear_data):
 # --------------------------------------------------------------------------
 # Grid and errors
 # --------------------------------------------------------------------------
+
 
 def test_ale_grid_merges_ties_and_ignores_nan():
     edges = ale_grid([0, 0, 0, 1, 1, np.nan], grid_size=10)
@@ -208,16 +211,20 @@ def test_nan_in_feature_is_skipped():
 # Feature labels
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize(("column", "expected"), [
-    ("kurtosis_smth_AU12_r", "AU12 - Lip Corner Puller — kurtosis"),
-    ("acf10_sumsq_AU06_r", "AU06 - Cheek Raiser — acf10_sumsq"),
-    ("acf1_AU06_r", "AU06 - Cheek Raiser — acf1"),
-    ("mean_abs_diff_AU01_r", "AU01 - Inner Brow Raiser — mean_abs_diff"),
-    ("AU12_r__kurtosis", "AU12 - Lip Corner Puller — kurtosis"),
-    ("sd_nmf2", "nmf2 — sd"),
-    ("video_filename", "video_filename"),
-    ("smth_AU12_r", "AU12 - Lip Corner Puller"),
-])
+
+@pytest.mark.parametrize(
+    ("column", "expected"),
+    [
+        ("kurtosis_smth_AU12_r", "AU12 - Lip Corner Puller — kurtosis"),
+        ("acf10_sumsq_AU06_r", "AU06 - Cheek Raiser — acf10_sumsq"),
+        ("acf1_AU06_r", "AU06 - Cheek Raiser — acf1"),
+        ("mean_abs_diff_AU01_r", "AU01 - Inner Brow Raiser — mean_abs_diff"),
+        ("AU12_r__kurtosis", "AU12 - Lip Corner Puller — kurtosis"),
+        ("sd_nmf2", "nmf2 — sd"),
+        ("video_filename", "video_filename"),
+        ("smth_AU12_r", "AU12 - Lip Corner Puller"),
+    ],
+)
 def test_humanise_feature_label(column, expected):
     assert humanise_feature_label(column) == expected
 
@@ -225,6 +232,7 @@ def test_humanise_feature_label(column, expected):
 # --------------------------------------------------------------------------
 # Across CV folds
 # --------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="module")
 def cv_result():
@@ -235,8 +243,9 @@ def cv_result():
     frames = make_frames(classes=("a", "b", "c"), n_participants=15, videos_per_participant=6)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        return cross_validate_pipeline(frames, "label", "participant", keep_models=True,
-                                       **fast_kwargs())
+        return cross_validate_pipeline(
+            frames, "label", "participant", keep_models=True, **fast_kwargs()
+        )
 
 
 def _a_feature(result):
@@ -264,8 +273,9 @@ def test_cv_matches_single_model_on_the_shared_grid(cv_result):
     (rep, fold), part = next(iter(curves.groupby(["repeat", "fold"])))
     model_info = cv_result.fold_models[(rep, fold)]
     edges = np.sort(part["value"].unique())
-    single = feature_effect_ale(model_info["model"], model_info["X_test"], feature,
-                                grid={feature: edges})
+    single = feature_effect_ale(
+        model_info["model"], model_info["X_test"], feature, grid={feature: edges}
+    )
     merged = part.merge(single, on=["feature", "class", "value"], suffixes=("_cv", ""))
     np.testing.assert_allclose(merged["effect_cv"], merged["effect"])
     assert curves["repeat"].unique().tolist() == [0]
@@ -277,8 +287,10 @@ def test_cv_skips_folds_that_did_not_use_the_feature(cv_result):
     key = next(iter(cv_result.fold_models))
     info = cv_result.fold_models[key]
     kept = [f for f in info["features"] if f != feature]
-    trimmed.fold_models = {**cv_result.fold_models,
-                           key: {**info, "features": kept, "X_test": info["X_test"][kept]}}
+    trimmed.fold_models = {
+        **cv_result.fold_models,
+        key: {**info, "features": kept, "X_test": info["X_test"][kept]},
+    }
     curves = feature_effect_ale_cv(trimmed, feature)
     used = set(map(tuple, curves[["repeat", "fold"]].drop_duplicates().to_numpy()))
     assert key not in used
@@ -293,13 +305,15 @@ def test_cv_with_shared_table_and_errors(cv_result):
     feature = _a_feature(cv_result)
     # Folds choose different AUs, so a shared table covers only some of them;
     # use one fold's table and check the folds it doesn't cover are skipped.
-    key, info = next((k, v) for k, v in cv_result.fold_models.items()
-                     if feature in v["features"])
+    key, info = next((k, v) for k, v in cv_result.fold_models.items() if feature in v["features"])
     X = info["X_test"]
     curves = feature_effect_ale_cv(cv_result, feature, X=X)
     used = curves[["repeat", "fold"]].drop_duplicates()
-    covered = [k for k, v in cv_result.fold_models.items()
-               if feature in v["features"] and set(v["features"]) <= set(X.columns)]
+    covered = [
+        k
+        for k, v in cv_result.fold_models.items()
+        if feature in v["features"] and set(v["features"]) <= set(X.columns)
+    ]
     assert sorted(map(tuple, used.to_numpy())) == sorted(covered)
     assert key in covered
     # With X, every fold is estimated over all of X.
@@ -320,6 +334,7 @@ def test_cv_with_shared_table_and_errors(cv_result):
 # Plot
 # --------------------------------------------------------------------------
 
+
 @pytest.fixture
 def plt():
     matplotlib = pytest.importorskip("matplotlib", reason="plots need the viz extra")
@@ -333,8 +348,9 @@ def plt():
 def test_plot_single_model(plt, linear_data, tmp_path):
     X, y = linear_data
     model = LinearRegression().fit(X, y)
-    fig = plot_feature_effect(model, X, ["a", "b", "c"], ncols=2, save_path="ale.png",
-                              output_dir=tmp_path)
+    fig = plot_feature_effect(
+        model, X, ["a", "b", "c"], ncols=2, save_path="ale.png", output_dir=tmp_path
+    )
     visible = [ax for ax in fig.axes if ax.get_visible()]
     assert len(visible) == 3
     assert (tmp_path / "ale.png").exists()

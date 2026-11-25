@@ -74,6 +74,7 @@ _FALLBACK_COLOURS = ["#E69F00", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#56
 # DeLong's method
 # --------------------------------------------------------------------------
 
+
 def _midrank(x: np.ndarray) -> np.ndarray:
     """Ranks with ties averaged, as DeLong's estimator requires."""
     order = np.argsort(x)
@@ -210,10 +211,12 @@ def delong_roc_test(
     """
     if y_true_b is None:
         positive = _positive_mask(y_true, positive_label)
-        scores = np.vstack([
-            np.asarray(y_score_a, dtype=float),
-            np.asarray(y_score_b, dtype=float),
-        ])
+        scores = np.vstack(
+            [
+                np.asarray(y_score_a, dtype=float),
+                np.asarray(y_score_b, dtype=float),
+            ]
+        )
         aucs, cov = _delong_auc_cov(scores, positive)
         variance = cov[0, 0] + cov[1, 1] - 2 * cov[0, 1]
         paired = True
@@ -231,14 +234,16 @@ def delong_roc_test(
         z = difference / float(np.sqrt(variance))
         p_value = float(2 * stats.norm.sf(abs(z)))
 
-    return pd.Series({
-        "auc_a": float(aucs[0]),
-        "auc_b": float(aucs[1]),
-        "difference": difference,
-        "z": float(z),
-        "p_value": float(p_value),
-        "paired": paired,
-    })
+    return pd.Series(
+        {
+            "auc_a": float(aucs[0]),
+            "auc_b": float(aucs[1]),
+            "difference": difference,
+            "z": float(z),
+            "p_value": float(p_value),
+            "paired": paired,
+        }
+    )
 
 
 def _auc_and_variance(y_true, y_score, positive_label):
@@ -250,6 +255,7 @@ def _auc_and_variance(y_true, y_score, positive_label):
 # --------------------------------------------------------------------------
 # Confusion-matrix statistics
 # --------------------------------------------------------------------------
+
 
 def _positive_mask(y_true, positive_label) -> np.ndarray:
     y_true = np.asarray(y_true)
@@ -383,9 +389,7 @@ def classification_metrics(
     y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
     if len(y_true) != len(y_pred):
-        raise ValueError(
-            f"y_true has {len(y_true)} entries but y_pred has {len(y_pred)}."
-        )
+        raise ValueError(f"y_true has {len(y_true)} entries but y_pred has {len(y_pred)}.")
 
     classes = _class_list(y_true, y_pred, labels)
     if y_score is not None:
@@ -472,29 +476,31 @@ def classification_metrics(
             y_true, y_score, positive_label=positive_label, alpha=alpha
         )
 
-    return pd.Series({
-        "n": n,
-        "accuracy": accuracy,
-        "accuracy_ci_lower": float(ci_lower),
-        "accuracy_ci_upper": float(ci_upper),
-        "no_information_rate": nir,
-        "p_acc_gt_nir": p_acc_gt_nir,
-        "kappa": float(cohen_kappa_score(y_true, y_pred)),
-        "mcnemar_p": mcnemar_p,
-        "sensitivity": sensitivity,
-        "specificity": specificity,
-        "ppv": ppv,
-        "npv": npv,
-        "prevalence": (tp + fn) / n,
-        "detection_rate": tp / n,
-        "detection_prevalence": (tp + fp) / n,
-        "balanced_accuracy": (sensitivity + specificity) / 2,
-        "f1": f1,
-        "mcc": float(matthews_corrcoef(y_true, y_pred)),
-        "roc_auc": auc,
-        "roc_auc_ci_lower": auc_lower,
-        "roc_auc_ci_upper": auc_upper,
-    })
+    return pd.Series(
+        {
+            "n": n,
+            "accuracy": accuracy,
+            "accuracy_ci_lower": float(ci_lower),
+            "accuracy_ci_upper": float(ci_upper),
+            "no_information_rate": nir,
+            "p_acc_gt_nir": p_acc_gt_nir,
+            "kappa": float(cohen_kappa_score(y_true, y_pred)),
+            "mcnemar_p": mcnemar_p,
+            "sensitivity": sensitivity,
+            "specificity": specificity,
+            "ppv": ppv,
+            "npv": npv,
+            "prevalence": (tp + fn) / n,
+            "detection_rate": tp / n,
+            "detection_prevalence": (tp + fp) / n,
+            "balanced_accuracy": (sensitivity + specificity) / 2,
+            "f1": f1,
+            "mcc": float(matthews_corrcoef(y_true, y_pred)),
+            "roc_auc": auc,
+            "roc_auc_ci_lower": auc_lower,
+            "roc_auc_ci_upper": auc_upper,
+        }
+    )
 
 
 def _class_list(y_true, y_pred, labels) -> list:
@@ -546,14 +552,16 @@ def _multiclass_metrics(y_true, y_pred, y_score, classes, alpha) -> pd.Series:
             )
         else:
             auc = lower = upper = float("nan")
-        per_class.update({
-            f"precision_{cls}": precision,
-            f"recall_{cls}": recall,
-            f"f1_{cls}": f1,
-            f"roc_auc_{cls}": auc,
-            f"roc_auc_{cls}_ci_lower": lower,
-            f"roc_auc_{cls}_ci_upper": upper,
-        })
+        per_class.update(
+            {
+                f"precision_{cls}": precision,
+                f"recall_{cls}": recall,
+                f"f1_{cls}": f1,
+                f"roc_auc_{cls}": auc,
+                f"roc_auc_{cls}_ci_lower": lower,
+                f"roc_auc_{cls}_ci_upper": upper,
+            }
+        )
         recalls.append(recall)
         f1s.append(f1)
         aucs.append(auc)
@@ -637,8 +645,7 @@ def _positive_proba(model, X, positive_label) -> np.ndarray:
             )
     if positive_label not in classes:
         raise ValueError(
-            f"positive_label={positive_label!r} is not one of the model's "
-            f"classes {classes}."
+            f"positive_label={positive_label!r} is not one of the model's classes {classes}."
         )
     return model.predict_proba(X)[:, classes.index(positive_label)]
 
@@ -682,23 +689,26 @@ def evaluate_models(
             if not hasattr(model, "predict_proba"):
                 raise TypeError(f"{type(model).__name__} has no predict_proba.")
             rows[name] = classification_metrics(
-                y, y_pred, model.predict_proba(X), positive_label=positive_label,
-                alpha=alpha, labels=classes,
+                y,
+                y_pred,
+                model.predict_proba(X),
+                positive_label=positive_label,
+                alpha=alpha,
+                labels=classes,
             )
             continue
         y_score = _positive_proba(model, X, positive_label)
         label = positive_label
         if label is None:
             label = list(model.classes_)[-1]
-        rows[name] = classification_metrics(
-            y, y_pred, y_score, positive_label=label, alpha=alpha
-        )
+        rows[name] = classification_metrics(y, y_pred, y_score, positive_label=label, alpha=alpha)
     return pd.DataFrame(rows).T
 
 
 # --------------------------------------------------------------------------
 # Cross-validation
 # --------------------------------------------------------------------------
+
 
 def cross_validate_grouped(
     model,
@@ -794,17 +804,16 @@ def cross_validate_grouped(
         )
 
     scoring_list = [scoring] if isinstance(scoring, str) else list(scoring)
-    results = cross_validate(
-        model, X, y, groups=groups, cv=cv, scoring=scoring_list, n_jobs=n_jobs
+    results = cross_validate(model, X, y, groups=groups, cv=cv, scoring=scoring_list, n_jobs=n_jobs)
+    return pd.DataFrame({name: results[f"test_{name}"] for name in scoring_list}).rename_axis(
+        "fold"
     )
-    return pd.DataFrame(
-        {name: results[f"test_{name}"] for name in scoring_list}
-    ).rename_axis("fold")
 
 
 # --------------------------------------------------------------------------
 # Figures
 # --------------------------------------------------------------------------
+
 
 def _group_name(values) -> str:
     """Legend name for a group of labels: the label, or "rest" if mixed."""
@@ -856,7 +865,11 @@ def _draw_ovr_curves(ax, y, proba, classes, colours, linestyles, prefix=""):
         fpr, tpr, _ = roc_curve(is_class, proba[:, k])
         auc = roc_auc_score(is_class, proba[:, k])
         ax.plot(
-            fpr, tpr, linewidth=2, color=colours[k], linestyle=linestyles[k],
+            fpr,
+            tpr,
+            linewidth=2,
+            color=colours[k],
+            linestyle=linestyles[k],
             label=f"{prefix}{cls} vs rest (AUC = {auc:.3f})",
         )
 
@@ -916,8 +929,9 @@ def plot_roc_curves(
             multiclass = True
             proba = model.predict_proba(X)
             if len(models) == 1:
-                colours = [_FALLBACK_COLOURS[k % len(_FALLBACK_COLOURS)]
-                           for k in range(len(classes))]
+                colours = [
+                    _FALLBACK_COLOURS[k % len(_FALLBACK_COLOURS)] for k in range(len(classes))
+                ]
                 styles, prefix = ["-"] * len(classes), ""
             else:
                 colours = [_model_colour(name, index)] * len(classes)
@@ -930,13 +944,17 @@ def plot_roc_curves(
         fpr, tpr, _ = roc_curve(np.asarray(y) == label, score)
         auc = roc_auc_score(np.asarray(y) == label, score)
         ax.plot(
-            fpr, tpr, linewidth=2, color=_model_colour(name, index),
+            fpr,
+            tpr,
+            linewidth=2,
+            color=_model_colour(name, index),
             label=f"{_model_label(name)} (AUC = {auc:.3f})",
         )
 
     _finish_roc_axes(
         ax,
-        "One-vs-rest ROC curves on the held-out test set" if multiclass
+        "One-vs-rest ROC curves on the held-out test set"
+        if multiclass
         else "ROC curves on the held-out test set",
     )
     save_figure(ax.figure, save_path, output_dir, dpi)
@@ -1086,7 +1104,11 @@ def plot_confusion_matrix(
                 "both": f"{counts[i, j]:d}\n({shading[i, j]:.2f})",
             }[annotate]
             ax.text(
-                j, i, text, ha="center", va="center",
+                j,
+                i,
+                text,
+                ha="center",
+                va="center",
                 color="white" if shading[i, j] > threshold else "black",
             )
     if normalize is not False:
@@ -1150,8 +1172,9 @@ def plot_probability_distributions(
         name = _group_name(y_true[mask])
         if len(values) < 2 or np.allclose(values, values[0]):
             # gaussian_kde needs spread; fall back to a histogram.
-            ax.hist(values, bins=20, range=(0, 1), density=True, alpha=0.4,
-                    color=colour, label=name)
+            ax.hist(
+                values, bins=20, range=(0, 1), density=True, alpha=0.4, color=colour, label=name
+            )
             continue
         density = stats.gaussian_kde(values)(grid)
         ax.fill_between(grid, density, color=colour, alpha=0.4)
@@ -1222,8 +1245,10 @@ def plot_decision_boundary(
     """
     plt = _require_matplotlib("plot_decision_boundary")
     if not isinstance(X, pd.DataFrame):
-        raise TypeError("plot_decision_boundary needs a DataFrame so it can hold "
-                        "the unplotted features fixed by name.")
+        raise TypeError(
+            "plot_decision_boundary needs a DataFrame so it can hold "
+            "the unplotted features fixed by name."
+        )
     x_name, y_name = features
     for name in features:
         if name not in X.columns:
@@ -1249,7 +1274,12 @@ def plot_decision_boundary(
         _, ax = plt.subplots(figsize=(5.5, 5))
 
     ax.contourf(
-        xx, yy, probability, levels=np.linspace(0, 1, 11), cmap="RdYlBu_r", alpha=0.45,
+        xx,
+        yy,
+        probability,
+        levels=np.linspace(0, 1, 11),
+        cmap="RdYlBu_r",
+        alpha=0.45,
     )
     ax.contour(xx, yy, probability, levels=[0.5], colors="black", linewidths=1.2)
 
@@ -1261,8 +1291,13 @@ def plot_decision_boundary(
         if not mask.any():
             continue
         ax.scatter(
-            X.loc[mask.tolist(), x_name], X.loc[mask.tolist(), y_name],
-            c=colour, marker=marker, edgecolor="black", linewidth=0.4, s=32,
+            X.loc[mask.tolist(), x_name],
+            X.loc[mask.tolist(), y_name],
+            c=colour,
+            marker=marker,
+            edgecolor="black",
+            linewidth=0.4,
+            s=32,
             label=_group_name(np.asarray(y)[mask]),
         )
 
@@ -1315,18 +1350,30 @@ def plot_accuracy_comparison(
 
     ax.bar(range(len(names)), accuracy, color=colours, alpha=0.85, width=0.6)
     ax.errorbar(
-        range(len(names)), accuracy, yerr=[lower, upper],
-        fmt="none", ecolor="black", capsize=4, linewidth=1,
+        range(len(names)),
+        accuracy,
+        yerr=[lower, upper],
+        fmt="none",
+        ecolor="black",
+        capsize=4,
+        linewidth=1,
     )
     if "no_information_rate" in results:
         nir = float(results["no_information_rate"].iloc[0])
         ax.axhline(nir, linestyle="--", color="red", alpha=0.6)
-        ax.annotate(f"NIR ({nir:.2f})", xy=(len(names) - 0.5, nir),
-                    xytext=(0, 4), textcoords="offset points",
-                    ha="right", color="red", fontsize=9)
+        ax.annotate(
+            f"NIR ({nir:.2f})",
+            xy=(len(names) - 0.5, nir),
+            xytext=(0, 4),
+            textcoords="offset points",
+            ha="right",
+            color="red",
+            fontsize=9,
+        )
 
-    ax.set_xticks(range(len(names)), [_model_label(name) for name in names],
-                  rotation=20, ha="right")
+    ax.set_xticks(
+        range(len(names)), [_model_label(name) for name in names], rotation=20, ha="right"
+    )
     ax.set_ylim(0, 1)
     ax.set_ylabel("Accuracy")
     ax.set_title("Test-set accuracy (95% exact CIs)")

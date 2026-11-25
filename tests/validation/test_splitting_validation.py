@@ -19,9 +19,7 @@ from facedyn.splitting import paired_train_test_split
 
 DATA_PATH = Path(__file__).parents[2] / "Data" / "full_dataset_preprocessed.csv"
 
-pytestmark = pytest.mark.skipif(
-    not DATA_PATH.exists(), reason="full dataset not available locally"
-)
+pytestmark = pytest.mark.skipif(not DATA_PATH.exists(), reason="full dataset not available locally")
 
 
 def test_split_counts_match_r_reference():

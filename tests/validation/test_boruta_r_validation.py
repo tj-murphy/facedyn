@@ -181,8 +181,7 @@ def test_stability_shows_rs_published_eight_do_not_reproduce(stability_selector)
     # should not move when a package default does.
     survivors = [f for f, freq in published.items() if freq >= 0.8]
     assert len(survivors) <= 3, (
-        f"expected almost none of R's 8 to survive reseeding, got {survivors} "
-        f"from {published}"
+        f"expected almost none of R's 8 to survive reseeding, got {survivors} from {published}"
     )
     # At least one of the published eight is close to a coin flip.
     assert min(published.values()) <= 0.5
@@ -263,9 +262,7 @@ def test_clustering_groups_the_features_that_churn_between_runs(data, feature_co
     assert (at_findcorrelation.loc[CHURNING_AU12_FEATURES, "cluster_size"] == 1).all()
 
 
-def test_clustering_groups_all_four_churning_features_at_a_lower_threshold(
-    data, feature_columns
-):
+def test_clustering_groups_all_four_churning_features_at_a_lower_threshold(data, feature_columns):
     clusters = correlated_feature_clusters(data, feature_columns, threshold=0.7)
     clusters = clusters.set_index("feature").loc[CHURNING_AU12_FEATURES, "cluster"]
 

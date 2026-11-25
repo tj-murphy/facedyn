@@ -68,6 +68,7 @@ _FALLBACK_COLOURS = ["#E69F00", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#56
 # Core estimator
 # --------------------------------------------------------------------------
 
+
 def ale_grid(values, grid_size: int = 20) -> np.ndarray:
     """Interval edges for ALE: the unique empirical quantiles of ``values``.
 
@@ -99,8 +100,7 @@ def ale_grid(values, grid_size: int = 20) -> np.ndarray:
     edges = np.unique(np.quantile(x, probs, method="inverted_cdf")) if len(x) else x
     if len(edges) < 2:
         raise ValueError(
-            "An ALE curve needs a feature with at least two distinct values; "
-            f"got {len(edges)}."
+            f"An ALE curve needs a feature with at least two distinct values; got {len(edges)}."
         )
     return edges
 
@@ -204,10 +204,15 @@ def _as_list(features) -> list:
 
 def _curve_frame(feature, labels, edges, effect, counts) -> pd.DataFrame:
     parts = [
-        pd.DataFrame({
-            "feature": feature, "class": label, "value": edges,
-            "effect": effect[:, j], "n": counts,
-        })
+        pd.DataFrame(
+            {
+                "feature": feature,
+                "class": label,
+                "value": edges,
+                "effect": effect[:, j],
+                "n": counts,
+            }
+        )
         for j, label in enumerate(labels)
     ]
     return pd.concat(parts, ignore_index=True)[_CURVE_COLUMNS]
@@ -286,8 +291,11 @@ def feature_effect_ale(
     for feature in _as_list(features):
         if feature not in X.columns:
             raise KeyError(f"X has no feature {feature!r}.")
-        edges = (np.unique(np.asarray(grid[feature], dtype=float)) if feature in grid
-                 else ale_grid(X[feature], grid_size))
+        edges = (
+            np.unique(np.asarray(grid[feature], dtype=float))
+            if feature in grid
+            else ale_grid(X[feature], grid_size)
+        )
         if len(edges) < 2:
             raise ValueError(f"The grid for {feature!r} needs at least two distinct edges.")
         effect, counts = _ale_curve(predict, X, feature, edges, as_array)
@@ -298,6 +306,7 @@ def feature_effect_ale(
 # --------------------------------------------------------------------------
 # Across cross-validation folds
 # --------------------------------------------------------------------------
+
 
 def _fold_items(result, repeat):
     if not result.fold_models:
@@ -389,15 +398,15 @@ def feature_effect_ale_cv(
                 f"No fold model used {feature!r} (or X lacks its features), so there "
                 "is no effect to trace."
             )
-        values = (X[feature] if X is not None
-                  else pd.concat([data[feature] for _, _, data in using]))
+        values = X[feature] if X is not None else pd.concat([data[feature] for _, _, data in using])
         edges = ale_grid(values, grid_size)
         for (rep, fold_id), fold, data in using:
             labels, predict = _output_spec(fold["model"], classes, result.classes)
             effect, counts = _ale_curve(predict, data, feature, edges, as_array=False)
             parts.append(
-                _curve_frame(feature, labels, edges, effect, counts)
-                .assign(repeat=rep, fold=fold_id)
+                _curve_frame(feature, labels, edges, effect, counts).assign(
+                    repeat=rep, fold=fold_id
+                )
             )
     curves = pd.concat(parts, ignore_index=True)
     return curves[["repeat", "fold", *_CURVE_COLUMNS]]
@@ -433,6 +442,7 @@ def summarise_feature_effects(curves: pd.DataFrame) -> pd.DataFrame:
 # Plot
 # --------------------------------------------------------------------------
 
+
 def _require_matplotlib(function_name: str):
     try:
         import matplotlib.pyplot as plt
@@ -457,8 +467,11 @@ def _rug_values(model_or_result, X, feature, is_cv, repeat) -> np.ndarray:
     # Every repeat tests every video once, so one repeat's test values are the data.
     items = _fold_items(model_or_result, repeat)
     first = items[0][0][0]
-    parts = [fold["X_test"][feature] for key, fold in items
-             if key[0] == first and feature in fold["X_test"].columns]
+    parts = [
+        fold["X_test"][feature]
+        for key, fold in items
+        if key[0] == first and feature in fold["X_test"].columns
+    ]
     return pd.concat(parts).to_numpy(dtype=float) if parts else np.array([])
 
 
@@ -540,26 +553,28 @@ def plot_feature_effect(
     feature_list = _as_list(features)
 
     if is_cv:
-        curves = feature_effect_ale_cv(model_or_result, feature_list, X=X,
-                                       grid_size=grid_size, classes=classes, repeat=repeat)
+        curves = feature_effect_ale_cv(
+            model_or_result, feature_list, X=X, grid_size=grid_size, classes=classes, repeat=repeat
+        )
         summary = summarise_feature_effects(curves)
         n_total = len(_fold_items(model_or_result, repeat))
     else:
         if X is None:
             raise ValueError("X is required to plot the effects of a single model.")
-        curves = feature_effect_ale(model_or_result, X, feature_list,
-                                    grid_size=grid_size, classes=classes)
+        curves = feature_effect_ale(
+            model_or_result, X, feature_list, grid_size=grid_size, classes=classes
+        )
         summary = curves.rename(columns={"effect": "mean"})
 
     labels = list(pd.unique(curves["class"]))
-    colours = {label: _FALLBACK_COLOURS[k % len(_FALLBACK_COLOURS)]
-               for k, label in enumerate(labels)}
+    colours = {
+        label: _FALLBACK_COLOURS[k % len(_FALLBACK_COLOURS)] for k, label in enumerate(labels)
+    }
 
     if axes is None:
         ncols = max(1, min(int(ncols), len(feature_list)))
         nrows = int(np.ceil(len(feature_list) / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.4 * nrows),
-                                 squeeze=False)
+        fig, axes = plt.subplots(nrows, ncols, figsize=(4.2 * ncols, 3.4 * nrows), squeeze=False)
     axes_flat = np.ravel(np.asarray(axes, dtype=object))
     if len(axes_flat) < len(feature_list):
         raise ValueError(f"Need {len(feature_list)} axes, got {len(axes_flat)}.")
@@ -572,27 +587,41 @@ def plot_feature_effect(
             name = "effect" if label is None else str(label)
             colour = colours[label]
             if is_cv and show_folds:
-                fold_part = curves[(curves["feature"] == feature)
-                                   & _matches(curves["class"], label)]
+                fold_part = curves[
+                    (curves["feature"] == feature) & _matches(curves["class"], label)
+                ]
                 for _, one in fold_part.groupby(["repeat", "fold"]):
                     ax.plot(one["value"], one["effect"], color=colour, alpha=0.25, lw=0.7)
             if is_cv and band is not None:
-                low, high = ((part["mean"] - part["sd"], part["mean"] + part["sd"])
-                             if band == "sd" else (part["min"], part["max"]))
+                low, high = (
+                    (part["mean"] - part["sd"], part["mean"] + part["sd"])
+                    if band == "sd"
+                    else (part["min"], part["max"])
+                )
                 ax.fill_between(part["value"], low, high, color=colour, alpha=0.2, lw=0)
             ax.plot(part["value"], part["mean"], color=colour, lw=2, label=name)
 
         rug = _rug_values(model_or_result, X, feature, is_cv, repeat)
         rug = rug[np.isfinite(rug)]
         if len(rug):
-            ax.plot(rug, np.zeros_like(rug), "|", color="0.3", alpha=0.5, ms=8,
-                    transform=ax.get_xaxis_transform())
+            ax.plot(
+                rug,
+                np.zeros_like(rug),
+                "|",
+                color="0.3",
+                alpha=0.5,
+                ms=8,
+                transform=ax.get_xaxis_transform(),
+            )
         ax.axhline(0, color="0.6", lw=0.8, ls="--")
 
         title = humanise_feature_label(str(feature)) if humanise else str(feature)
         if is_cv:
-            n_used = int(curves.loc[curves["feature"] == feature, ["repeat", "fold"]]
-                         .drop_duplicates().shape[0])
+            n_used = int(
+                curves.loc[curves["feature"] == feature, ["repeat", "fold"]]
+                .drop_duplicates()
+                .shape[0]
+            )
             title += f"\n(used in {n_used} of {n_total} folds)"
         ax.set_title(title, fontsize=9)
         ax.set_xlabel("Feature value")
@@ -600,7 +629,7 @@ def plot_feature_effect(
         if ax is axes_flat[0] and (len(labels) > 1 or labels[0] is not None):
             ax.legend(fontsize=8, frameon=False, title="Class" if labels != [None] else None)
 
-    for ax in axes_flat[len(feature_list):]:
+    for ax in axes_flat[len(feature_list) :]:
         ax.set_visible(False)
     fig.tight_layout()
     save_figure(fig, save_path, output_dir, dpi)

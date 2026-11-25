@@ -163,8 +163,9 @@ def test_mtry_of_four_still_works_with_fewer_features():
 def test_every_classifier_handles_three_classes(name):
     X, _ = make_xy(n=90)
     rng = np.random.default_rng(1)
-    y = np.array(["angry", "happy", "sad"])[np.digitize(X["f0"] + 0.3 * rng.normal(size=90),
-                                                        [-0.5, 0.5])]
+    y = np.array(["angry", "happy", "sad"])[
+        np.digitize(X["f0"] + 0.3 * rng.normal(size=90), [-0.5, 0.5])
+    ]
     model = make_classifier(name, random_state=0).fit(X, y)
 
     assert list(model.classes_) == ["angry", "happy", "sad"]

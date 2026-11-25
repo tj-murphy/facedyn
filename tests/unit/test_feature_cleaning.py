@@ -6,13 +6,15 @@ from facedyn.features.cleaning import FeatureCleaner, feature_diagnostics
 
 
 def test_feature_diagnostics_reports_nan_inf_sd_and_constancy():
-    df = pd.DataFrame({
-        "normal": [1.0, 2.0, 3.0, 4.0, 5.0],
-        "has_nan": [1.0, np.nan, 3.0, np.nan, 5.0],
-        "has_inf": [1.0, np.inf, -np.inf, 4.0, 5.0],
-        "all_nan": [np.nan] * 5,
-        "constant": [2.0] * 5,
-    })
+    df = pd.DataFrame(
+        {
+            "normal": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "has_nan": [1.0, np.nan, 3.0, np.nan, 5.0],
+            "has_inf": [1.0, np.inf, -np.inf, 4.0, 5.0],
+            "all_nan": [np.nan] * 5,
+            "constant": [2.0] * 5,
+        }
+    )
     original = df.copy()
 
     report = feature_diagnostics(df)
@@ -34,10 +36,12 @@ def test_feature_diagnostics_reports_nan_inf_sd_and_constancy():
 
 
 def test_feature_diagnostics_infers_numeric_columns_when_not_given():
-    df = pd.DataFrame({
-        "video_filename": ["a", "b", "c"],
-        "feature_x": [1.0, 2.0, 3.0],
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": ["a", "b", "c"],
+            "feature_x": [1.0, 2.0, 3.0],
+        }
+    )
 
     report = feature_diagnostics(df)
 
@@ -46,21 +50,21 @@ def test_feature_diagnostics_infers_numeric_columns_when_not_given():
 
 def _sample_features(n: int = 15) -> pd.DataFrame:
     rng = np.random.default_rng(0)
-    return pd.DataFrame({
-        "video_filename": [f"vid_{i}" for i in range(n)],
-        "series": ["AU12"] * n,
-        "feature_a": rng.normal(size=n),
-        "feature_b": rng.normal(size=n),
-    })
+    return pd.DataFrame(
+        {
+            "video_filename": [f"vid_{i}" for i in range(n)],
+            "series": ["AU12"] * n,
+            "feature_a": rng.normal(size=n),
+            "feature_b": rng.normal(size=n),
+        }
+    )
 
 
 def test_feature_cleaner_drops_all_nan_column_and_warns():
     df = _sample_features()
     df["broken"] = np.nan
 
-    cleaner = FeatureCleaner(
-        feature_columns=["feature_a", "feature_b", "broken"], random_state=0
-    )
+    cleaner = FeatureCleaner(feature_columns=["feature_a", "feature_b", "broken"], random_state=0)
     with pytest.warns(UserWarning, match="missing values"):
         cleaner.fit(df)
 
@@ -82,13 +86,15 @@ def test_feature_cleaner_converts_inf_to_nan_before_imputing():
 
 def test_feature_cleaner_drops_near_zero_sd_columns_after_imputation():
     n = 15
-    df = pd.DataFrame({
-        "video_filename": [f"vid_{i}" for i in range(n)],
-        "varying": np.linspace(0, 1, n),
-        # constant, but with float noise -- not exactly `sd == 0`, matching
-        # what real constant AU-derived series look like upstream
-        "near_constant": np.full(n, 0.5) + np.random.default_rng(1).normal(scale=1e-30, size=n),
-    })
+    df = pd.DataFrame(
+        {
+            "video_filename": [f"vid_{i}" for i in range(n)],
+            "varying": np.linspace(0, 1, n),
+            # constant, but with float noise -- not exactly `sd == 0`, matching
+            # what real constant AU-derived series look like upstream
+            "near_constant": np.full(n, 0.5) + np.random.default_rng(1).normal(scale=1e-30, size=n),
+        }
+    )
 
     cleaner = FeatureCleaner(
         feature_columns=["varying", "near_constant"], impute=False, random_state=0
@@ -136,14 +142,18 @@ def test_feature_cleaner_impute_false_leaves_nan_in_place():
 
 
 def test_feature_cleaner_zero_sd_decision_fit_on_train_reused_on_transform():
-    train = pd.DataFrame({
-        "video_filename": [f"vid_{i}" for i in range(10)],
-        "au": np.linspace(0, 1, 10),  # varies in train
-    })
-    test = pd.DataFrame({
-        "video_filename": [f"vid_{i}" for i in range(10, 15)],
-        "au": np.full(5, 0.3),  # constant in test only
-    })
+    train = pd.DataFrame(
+        {
+            "video_filename": [f"vid_{i}" for i in range(10)],
+            "au": np.linspace(0, 1, 10),  # varies in train
+        }
+    )
+    test = pd.DataFrame(
+        {
+            "video_filename": [f"vid_{i}" for i in range(10, 15)],
+            "au": np.full(5, 0.3),  # constant in test only
+        }
+    )
 
     cleaner = FeatureCleaner(feature_columns=["au"], impute=False, random_state=0)
     cleaner.fit(train)

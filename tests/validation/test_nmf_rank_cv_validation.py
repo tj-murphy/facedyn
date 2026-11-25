@@ -43,8 +43,14 @@ def test_cv_sweep_selects_rank_3_like_rcppml():
     sample = df.sample(n=5000, random_state=0).reset_index(drop=True)
 
     result = nmf_rank_cv_sweep(
-        sample, ranks=range(2, 7), test_fraction=0.1, n_replicates=2,
-        columns=au_cols, random_state=12345, max_iter=150, tol=1e-4,
+        sample,
+        ranks=range(2, 7),
+        test_fraction=0.1,
+        n_replicates=2,
+        columns=au_cols,
+        random_state=12345,
+        max_iter=150,
+        tol=1e-4,
     )
     agg = result.groupby("rank")["test_mse"].mean()
 

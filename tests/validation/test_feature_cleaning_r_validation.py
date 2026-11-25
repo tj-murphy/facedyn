@@ -85,17 +85,33 @@ def test_feature_diagnostics_matches_known_real_nan_counts():
 
     # The fixture's three constant-series rows send these to NA, and only these.
     constant_series_casualties = [
-        "sample_entropy", "Kurtosis", "Skewness", "x_acf1", "x_acf10",
-        "diff1_acf1", "diff1_acf10", "diff2_acf1", "diff2_acf10", "x_pacf5",
-        "diff1x_pacf5", "diff2x_pacf5", "entropy", "nonlinearity",
-        "unitroot_kpss", "unitroot_pp", "e_acf1", "e_acf10",
+        "sample_entropy",
+        "Kurtosis",
+        "Skewness",
+        "x_acf1",
+        "x_acf10",
+        "diff1_acf1",
+        "diff1_acf10",
+        "diff2_acf1",
+        "diff2_acf10",
+        "x_pacf5",
+        "diff1x_pacf5",
+        "diff2x_pacf5",
+        "entropy",
+        "nonlinearity",
+        "unitroot_kpss",
+        "unitroot_pp",
+        "e_acf1",
+        "e_acf10",
     ]
     for col in constant_series_casualties:
         assert report.loc[col, "n_nan"] == 3, col
         assert not report.loc[col, "all_nan"], col
 
     # Everything else in this fixture is fully observed.
-    fully_observed = set(feature_columns) - set(constant_series_casualties) - {"permutation_entropy"}
+    fully_observed = (
+        set(feature_columns) - set(constant_series_casualties) - {"permutation_entropy"}
+    )
     for col in fully_observed:
         assert report.loc[col, "n_nan"] == 0, col
 
