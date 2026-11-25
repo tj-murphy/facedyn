@@ -640,7 +640,7 @@ def _run_fold(frames, videos, y, train_idx, test_idx, steps, config) -> dict:
             features["selection_freq"] = features["feature"].map(frequency)
     kept_cols = features.loc[features["selected"], "feature"].tolist()
 
-    # No features left: predict the training class frequencies. 
+    # No features left: predict the training class frequencies.
     # The caller warns, since warnings raised inside joblib workers are lost.
     model = clone(steps["model"]) if kept_cols else DummyClassifier(strategy="prior")
     X_fit = X_train[kept_cols] if kept_cols else np.zeros((len(X_train), 1))

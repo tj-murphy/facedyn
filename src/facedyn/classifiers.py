@@ -29,6 +29,7 @@ from __future__ import annotations
 import numpy as np
 import sklearn
 from sklearn.base import BaseEstimator
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
@@ -67,7 +68,7 @@ CLASSIFIER_LABELS = {
 PAPER1_PARAMS = {
     "random_forest": {"n_estimators": 500, "max_features": 4},
     "c50_substitute": {"n_estimators": 20},
-    "svm_rbf": {"C": 0.25},
+    "svm_rbf": {"estimator__C": 0.25},
     "logistic_regression": {},
 }
 
@@ -75,11 +76,12 @@ PAPER1_PARAMS = {
 #: :class:`~sklearn.model_selection.GridSearchCV` on the pipelines this
 #: module builds. R tuned with ``tuneLength=5`` on ROC; caret's own
 #: ``svmRadial`` grid at that length is ``C = 2^(-2:2)`` with sigma fixed,
-#: which is reproduced here.
+#: which is reproduced here. The SVM's ``C`` sits one level down
+#: (``estimator__C``) because the SVC is wrapped for Platt scaling.
 PAPER1_PARAM_GRIDS = {
     "random_forest": {"classifier__max_features": [1, 2, 4, 6, 8]},
     "c50_substitute": {"classifier__n_estimators": [1, 10, 20, 30, 40]},
-    "svm_rbf": {"classifier__C": [0.25, 0.5, 1.0, 2.0, 4.0]},
+    "svm_rbf": {"classifier__estimator__C": [0.25, 0.5, 1.0, 2.0, 4.0]},
     "logistic_regression": {},
 }
 
@@ -116,10 +118,17 @@ def _build_estimator(name: str, random_state, n_jobs) -> BaseEstimator:
         # `make_classifier`.
         return AdaBoostClassifier(random_state=random_state)
     if name == "svm_rbf":
-        # SVC has no decision-threshold-free probability of its own; R's
-        # `caret` fits Platt scaling for `classProbs = TRUE`, which is what
-        # `probability=True` does here.
-        return SVC(kernel="rbf", probability=True, random_state=random_state)
+        # SVC has no probability of its own; R's `caret` fits Platt scaling
+        # for `classProbs = TRUE`. scikit-learn deprecated doing this through
+        # `SVC(probability=True)` in 1.9 (removal in 1.11) in favour of this
+        # wrapper, which runs the same procedure: a sigmoid fitted to 5-fold
+        # cross-validated decision values, with the SVC itself refit on all
+        # the data. Used on every scikit-learn version so results do not
+        # depend on which one is installed. Deterministic: the folds are
+        # unshuffled, so `random_state` is not needed.
+        return CalibratedClassifierCV(
+            SVC(kernel="rbf"), method="sigmoid", cv=5, ensemble=False
+        )
     if name == "logistic_regression":
         # Unregularised, matching R's `glm(family = binomial)`; sklearn's
         # default applies L2, which would not be the same model.
@@ -171,14 +180,17 @@ def make_classifier(
         dataset. ``"paper1"`` stays the default only so that existing code
         keeps reproducing the published numbers.
     random_state : int, optional
-        Seeds the estimator. Logistic regression is deterministic and
-        ignores it.
+        Seeds the estimator. Logistic regression and the SVM are
+        deterministic and ignore it.
     n_jobs : int, optional
         Passed to the random forest; the other estimators are
         single-threaded.
     **overrides
         Estimator parameters applied last, overriding the preset --
-        ``make_classifier("random_forest", n_estimators=100)``.
+        ``make_classifier("random_forest", n_estimators=100)``. For
+        ``"svm_rbf"``, the SVC's own parameters take an ``estimator__``
+        prefix (``estimator__C=1.0``), because the SVC is wrapped in
+        :class:`~sklearn.calibration.CalibratedClassifierCV`.
 
     Returns
     -------
@@ -189,6 +201,13 @@ def make_classifier(
 
     Notes
     -----
+    ``"svm_rbf"`` is an RBF :class:`~sklearn.svm.SVC` inside
+    :class:`~sklearn.calibration.CalibratedClassifierCV` (sigmoid, 5-fold,
+    ``ensemble=False``): Platt scaling, as `caret` uses for class
+    probabilities. ``predict`` takes the most probable class, so it always
+    agrees with ``predict_proba`` (``SVC(probability=True)`` predicted from
+    the raw decision function and could disagree).
+
     One deliberate difference from R for the SVM: `caret` takes the RBF
     width from ``kernlab::sigest``, a data-driven heuristic with no
     scikit-learn equivalent. These pipelines use ``gamma="scale"``, which

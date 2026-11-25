@@ -10,6 +10,7 @@ separate question, answered in `tests/validation/`.
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import AdaBoostClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
@@ -48,7 +49,7 @@ def test_every_classifier_scales_before_the_model(name):
     [
         ("random_forest", RandomForestClassifier),
         ("c50_substitute", AdaBoostClassifier),
-        ("svm_rbf", SVC),
+        ("svm_rbf", CalibratedClassifierCV),
         ("logistic_regression", LogisticRegression),
     ],
 )
@@ -65,8 +66,25 @@ def test_paper1_preset_applies_the_r_hyperparameters():
     assert boosted.n_estimators == 20  # R's trials = 20
 
     svm = make_classifier("svm_rbf").named_steps["classifier"]
-    assert svm.C == 0.25  # caret's svmRadial grid at tuneLength = 1
-    assert svm.probability is True
+    assert isinstance(svm.estimator, SVC)
+    assert svm.estimator.kernel == "rbf"
+    assert svm.estimator.C == 0.25  # caret's svmRadial grid at tuneLength = 1
+    # Platt scaling: a sigmoid on 5-fold out-of-fold decision values, one SVC.
+    assert svm.method == "sigmoid"
+    assert svm.cv == 5
+    assert svm.ensemble is False
+
+
+def test_svm_overrides_reach_the_wrapped_svc():
+    svm = make_classifier("svm_rbf", estimator__C=2.0).named_steps["classifier"]
+    assert svm.estimator.C == 2.0
+
+
+def test_svm_predictions_agree_with_its_probabilities():
+    X, y = make_xy()
+    model = make_classifier("svm_rbf").fit(X, y)
+    proba = model.predict_proba(X)
+    np.testing.assert_array_equal(model.predict(X), model.classes_[proba.argmax(axis=1)])
 
 
 def test_default_preset_leaves_sklearn_defaults_alone():

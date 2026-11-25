@@ -423,7 +423,7 @@ def _muscle_polygons(x, y) -> dict[str, list[tuple[float, float]]]:
     }
 
 
-# Muscle region -> the OpenFace AU code that drives its shading. 
+# Muscle region -> the OpenFace AU code that drives its shading.
 # Adapted from py-feat's get_heat
 _MUSCLE_TO_AU: dict[str, str] = {
     "frontalis_inner_l": "AU01", "frontalis_inner_r": "AU01",

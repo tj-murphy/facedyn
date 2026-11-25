@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Changed
 
+- `"svm_rbf"` is now `CalibratedClassifierCV(SVC(kernel="rbf"), method="sigmoid", cv=5, ensemble=False)` instead of `SVC(probability=True)`, which scikit-learn 1.9 deprecates (removal in 1.11). Both do Platt scaling on 5-fold cross-validated decision values; the wrapper is used on every scikit-learn version so results do not depend on the installed one. SVM probabilities will differ slightly from 1.0.0. `predict` now always agrees with `predict_proba`. The SVC's own parameters move one level down: `estimator__C` in `make_classifier` overrides and `PAPER1_PARAMS`, `classifier__estimator__C` in `PAPER1_PARAM_GRIDS`. The SVM is deterministic and ignores `random_state`.
 - `classification_metrics` and `evaluate_models` now raise if `positive_label` is given with more than two classes. Previously they quietly computed one-vs-rest binary statistics. Use the per-class columns or `pairwise_contrasts` instead.
 - `threshold_sweep` and `tune_selection_threshold` raise a clear error for `scoring="roc_auc"` with more than two classes, because DeLong is binary. The tuner raises before any Boruta fit. The error points to `scoring="roc_auc_ovr"`.
 - `plot_probability_distributions` and `plot_decision_boundary` label the negative group "rest" when it contains more than one class.
@@ -79,5 +80,3 @@ Initial release. Covers the full pipeline from Murphy, Cook, & Cuve (in prep): s
 
 - `plot_nmf_face_maps(..., normalize=False)` raised `ValueError: alpha (...) is outside 0-1 range` whenever a raw (unnormalized) component value exceeded 1 — the alpha calculation assumed values were already bounded to `[0, 1]`, which only holds after normalization. Values are now clipped to `[0, 1]` before use, matching the behaviour the docstring already claimed ("saturate every region to the same colour").
 - `plot_nmf_reconstruction_extremes`'s titles (AU name + "Original vs. Reconstructed" + video ID) overlapped into an unreadable jumble for longer video filenames. Titles now split across two lines and use `wrap=True` to further wrap anything still too long, and the default figure is wider (`(11, 4.5)` instead of `(9, 4)`).
-
-
