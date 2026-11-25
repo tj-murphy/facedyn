@@ -9,7 +9,8 @@ costs the study its one honest estimate of generalisation.
 
 This module is what let the shipped default move from ``0.8`` to ``0.5``
 on evidence that never touched that test set. It also produced a result
-worth knowing before trusting it: on Paper 1's data the tuned answer was
+worth knowing before trusting it: on the deepfake study's data (Murphy,
+Cook & Cuve, in prep) the tuned answer was
 lower still (``0.05``), because the selector inside the loop sees 296
 videos where the final fit sees 370 and therefore confirms fewer features
 at any given threshold. **A threshold tuned on inner splits is biased low
@@ -19,7 +20,7 @@ shrinkage costs. See ``PIPELINE.md`` "Step 8b".
 This module picks the threshold the way it should be picked: on a
 validation fold carved out of the **training** set.
 
-::
+For example, with the deepfake study's 464 videos::
 
     464 videos
      |-- 370 train --+-- ~296 sub-train  -> BorutaSelector (20 seeds)
@@ -42,7 +43,7 @@ Two entry points:
   already seen every validation fold, which is the bias this exists to
   avoid), aggregates the curves and applies a selection rule.
 
-None of this replicates the R analysis -- R ran Boruta once at
+None of this replicates that study's R analysis -- R ran Boruta once at
 ``set.seed(12345)`` and never tuned a threshold, because with one run
 there is no selection frequency to threshold. It is validated
 structurally and by measurement instead of against R output.
@@ -117,8 +118,9 @@ def _default_model(random_state):
     4 of 4 -- no feature subsampling at all. The comparison would then be
     partly between two different models rather than between two feature
     sets. scikit-learn's ``max_features="sqrt"`` scales with the set size
-    and keeps the sweep like-for-like; the tree count is raised to Paper
-    1's 500 because a noisy curve is the thing most likely to mislead here.
+    and keeps the sweep like-for-like; the tree count is raised to the
+    preset's 500 because a noisy curve is the thing most likely to mislead
+    here.
     """
     return make_classifier(
         "random_forest", preset="default", n_estimators=500, random_state=random_state
@@ -160,6 +162,22 @@ def _score_features(
         np.asarray(y_score, dtype=float), _positive_mask(y_val, label)
     )
     return float(aucs[0]), float(np.sqrt(cov[0, 0]))
+
+
+def _check_scoring_fits_labels(scoring: str, *label_arrays) -> None:
+    """DeLong-scored ``"roc_auc"`` is binary; say what to use instead."""
+    if scoring != "roc_auc":
+        return
+    classes = set()
+    for labels in label_arrays:
+        classes |= set(pd.unique(np.asarray(labels)).tolist())
+    if len(classes) > 2:
+        raise ValueError(
+            f"scoring='roc_auc' is binary (it is scored through DeLong), but the "
+            f"labels have {len(classes)} classes {sorted(map(str, classes))}. Use "
+            "scoring='roc_auc_ovr' (macro one-vs-rest AUC, no standard error), "
+            "or tune on one binary contrast from facedyn.evaluation.pairwise_contrasts."
+        )
 
 
 def threshold_sweep(
@@ -205,11 +223,14 @@ def threshold_sweep(
         why a fixed ``mtry`` would bias the sweep toward strict thresholds.
     scoring : str, default "roc_auc"
         ``"roc_auc"`` is scored through DeLong, which also supplies a
-        standard error. Any other value is looked up with
-        :func:`sklearn.metrics.get_scorer` and gets ``nan`` for its error.
+        standard error; it is binary, and raises for more than two
+        classes. Any other value is looked up with
+        :func:`sklearn.metrics.get_scorer` and gets ``nan`` for its error;
+        ``"roc_auc_ovr"`` is the multiclass choice.
     positive_label : optional
         Which label counts as positive. Inferred for 0/1 and boolean
-        labels; required otherwise. Paper 1 used ``"fake"``.
+        labels; required otherwise for binary labels (e.g. ``"fake"`` for
+        deepfake detection). Leave it out with more than two classes.
     thresholds : array-like, optional
         Candidates to score. Defaults to :func:`threshold_grid` for the
         selector's number of runs.
@@ -226,6 +247,7 @@ def threshold_sweep(
         end of the grid.
     """
     check_is_fitted(selector, "selection_frequency_")
+    _check_scoring_fits_labels(scoring, y_sub, y_val)
     if model is None:
         model = _default_model(random_state)
     if thresholds is None:
@@ -418,7 +440,8 @@ def tune_selection_threshold(
 
     **This is the expensive function in facedyn.** It fits Boruta
     ``n_repeats`` times, plus once more when ``refit=True``; a default
-    20-run fit takes roughly 12-19 minutes on Paper 1's 370x108 table, so
+    20-run fit takes roughly 12-19 minutes on a 370-video x 108-feature
+    table, so
     the defaults here are of the order of an hour. Everything else in the
     tuner is negligible beside that. ``BorutaSelector(importance="gini")``
     is the fast path if you want the shape of the curve before committing
@@ -433,12 +456,16 @@ def tune_selection_threshold(
     y : array-like
         Training labels.
     groups : array-like
-        Group ids from :func:`facedyn.splitting.pair_groups` or
-        :func:`facedyn.splitting.pair_groups_from_filenames`.
-        **Required.** A matched pair straddling the sub-train/validation
-        line puts a near-identical twin carrying the opposite label in
-        training, which pushes validation scores below chance -- and every
-        point on the curve would be built from those scores.
+        Group ids from :func:`facedyn.splitting.groups_from_column`
+        (repeated measures: one group per participant),
+        :func:`facedyn.splitting.pair_groups` or
+        :func:`facedyn.splitting.pair_groups_from_filenames` (matched
+        pairs). **Required.** A participant or pair straddling the
+        sub-train/validation line biases the validation scores -- upwards
+        when the model recognises a person it trained on, below chance
+        when a matched pair's near-identical twin carries the opposite
+        label -- and every point on the curve would be built from those
+        scores.
     selector : BorutaSelector, optional
         An **unfitted** template, cloned and fitted once per split.
         Defaults to ``BorutaSelector(random_state=random_state)``. Set its
@@ -479,6 +506,17 @@ def tune_selection_threshold(
 
     Examples
     --------
+    Repeated measures, one group per participant:
+
+    >>> groups = groups_from_column(train_frames, "participant",  # doctest: +SKIP
+    ...                             videos=train_wide["video_filename"])
+    >>> result = tune_selection_threshold(  # doctest: +SKIP
+    ...     train_wide, train_wide["emotion"], groups,
+    ...     scoring="roc_auc_ovr", random_state=0, n_jobs=-1,
+    ... )
+
+    Matched pairs (the deepfake study):
+
     >>> groups = pair_groups_from_filenames(train_wide)  # doctest: +SKIP
     >>> result = tune_selection_threshold(  # doctest: +SKIP
     ...     train_wide, train_wide["isfakeorreal"], groups,
@@ -488,14 +526,17 @@ def tune_selection_threshold(
     """
     if groups is None:
         raise ValueError(
-            "tune_selection_threshold requires groups so a matched pair is "
-            "never split between the sub-train and validation folds. Build "
-            "them with facedyn.splitting.pair_groups (or "
-            "pair_groups_from_filenames). Without them the validation scores "
-            "the whole curve is made of are not meaningful."
+            "tune_selection_threshold requires groups so a participant or "
+            "matched pair is never split between the sub-train and validation "
+            "folds. Build them with facedyn.splitting.groups_from_column (one "
+            "group per participant) or facedyn.splitting.pair_groups (matched "
+            "pairs). Without them the validation scores the whole curve is "
+            "made of are not meaningful."
         )
     if n_repeats < 1:
         raise ValueError(f"n_repeats must be >= 1, got {n_repeats}")
+    # Fail before the expensive Boruta fits, not after the first one.
+    _check_scoring_fits_labels(scoring, y)
 
     template = selector if selector is not None else BorutaSelector(
         random_state=random_state

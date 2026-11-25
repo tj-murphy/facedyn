@@ -834,3 +834,25 @@ def test_plots_raise_a_helpful_error_without_matplotlib(monkeypatch):
 
     with pytest.raises(ImportError, match=r"pip install facedyn\[viz\]"):
         plot_boruta_stability(selector)
+
+
+@pytest.mark.parametrize("importance", ["gini", "permutation"])
+def test_selector_handles_three_classes(importance):
+    rng = np.random.default_rng(0)
+    n = 150
+    signal = rng.normal(size=n)
+    frame = pd.DataFrame({
+        "informative": signal,
+        "noise_a": rng.normal(size=n),
+        "noise_b": rng.normal(size=n),
+    })
+    frame["emotion"] = np.array(["angry", "happy", "sad"])[np.digitize(signal, [-0.5, 0.5])]
+    selector = BorutaSelector(feature_columns=FEATURES, n_repeats=2, importance=importance,
+                              n_estimators=50, random_state=0)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        selector.fit(frame, frame["emotion"])
+
+    assert "informative" in selector.selected_columns_
+    assert selector.selection_frequency_["informative"] == 1.0
+    assert max(selector.selection_frequency_[f] for f in ("noise_a", "noise_b")) < 1.0

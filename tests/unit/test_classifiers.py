@@ -138,3 +138,19 @@ def test_mtry_of_four_still_works_with_fewer_features():
     X, y = make_xy(n_features=2)
     model = make_classifier("random_forest", random_state=0, n_estimators=10).fit(X, y)
     assert model.predict(X).shape == (len(X),)
+
+
+@pytest.mark.filterwarnings("ignore:Setting penalty=None")
+@pytest.mark.parametrize("name", CLASSIFIER_NAMES)
+def test_every_classifier_handles_three_classes(name):
+    X, _ = make_xy(n=90)
+    rng = np.random.default_rng(1)
+    y = np.array(["angry", "happy", "sad"])[np.digitize(X["f0"] + 0.3 * rng.normal(size=90),
+                                                        [-0.5, 0.5])]
+    model = make_classifier(name, random_state=0).fit(X, y)
+
+    assert list(model.classes_) == ["angry", "happy", "sad"]
+    proba = model.predict_proba(X)
+    assert proba.shape == (90, 3)
+    np.testing.assert_allclose(proba.sum(axis=1), 1.0)
+    assert np.mean(model.predict(X) == y) > 0.5

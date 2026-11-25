@@ -1,6 +1,9 @@
-"""Classifiers for the real/fake decision (`PIPELINE.md` step 9).
+"""Classifiers for the video-level decision (`PIPELINE.md` step 9).
 
-Four models, matching the original R analysis: random forest, a documented
+Binary or multiclass: every model here accepts any number of classes.
+
+Four models, matching the R analysis of the deepfake study (Murphy, Cook &
+Cuve, in prep) that facedyn was first built for: random forest, a documented
 C5.0 substitute, an RBF-kernel SVM, and unpenalised logistic regression.
 Each is an ordinary :class:`sklearn.pipeline.Pipeline` -- nothing here
 wraps or hides scikit-learn, so anything that works with an sklearn
@@ -12,10 +15,13 @@ before fitting *any* model, trees included. Keeping the scaler inside the
 pipeline also means it is refitted within each cross-validation fold rather
 than leaking test-fold statistics into training.
 
-Two things to keep in mind when cross-validating these on matched-pairs
-data: pass ``groups`` from :func:`facedyn.splitting.pair_groups`, and use
-:class:`facedyn.splitting.RepeatedStratifiedGroupKFold`. See
-:func:`facedyn.evaluation.cross_validate_grouped`.
+When cross-validating these on repeated-measures or matched-pairs data,
+pass ``groups`` (from :func:`facedyn.splitting.groups_from_column` for one
+group per participant, or :func:`facedyn.splitting.pair_groups` for matched
+pairs) and use :class:`facedyn.splitting.RepeatedStratifiedGroupKFold`.
+Better still, start from frame-level data with
+:func:`facedyn.crossval.cross_validate_pipeline`, which refits every step
+inside each fold.
 """
 
 from __future__ import annotations
@@ -37,7 +43,7 @@ CLASSIFIER_NAMES = (
 )
 
 #: Human-readable labels, used by the plotting helpers in
-#: :mod:`facedyn.evaluation` and by the paper's figures.
+#: :mod:`facedyn.evaluation`.
 CLASSIFIER_LABELS = {
     "random_forest": "Random Forest",
     "c50_substitute": "C5.0 substitute (AdaBoost)",
@@ -45,7 +51,7 @@ CLASSIFIER_LABELS = {
     "logistic_regression": "Logistic Regression",
 }
 
-#: Hyperparameters replicating the R analysis's fixed-parameter fits
+#: Hyperparameters replicating the deepfake study's fixed-parameter R fits
 #: (``caret::trainControl(method="none")``). See each entry's note in
 #: :func:`make_classifier`.
 PAPER1_PARAMS = {
@@ -134,9 +140,9 @@ def make_classifier(
         onto ``n_estimators=20``.
 
         Its base learner is AdaBoost's own default, a depth-1 tree, chosen
-        by measurement rather than assumption. Trained on Paper 1's 370
-        videos with its eight published features and scored on the held-out
-        94, depth-1 reaches ROC-AUC **0.660** against R's real C5.0
+        by measurement rather than assumption. Trained on the deepfake
+        study's 370 videos with its eight published features and scored on
+        the held-out 94, depth-1 reaches ROC-AUC **0.660** against R's real C5.0
         (``model="tree", trials=20, winnow=FALSE``) at **0.651**; depth-2
         reaches 0.697 and depth-3 falls to 0.582. Deeper trees are not a
         better C5.0, they are a different model. That is one dataset's
@@ -145,14 +151,15 @@ def make_classifier(
         AdaBoost substitute, not from C5.0.
     preset : {"paper1", "default"}, default "paper1"
         ``"paper1"`` applies :data:`PAPER1_PARAMS`, the fixed
-        hyperparameters the R analysis used with
+        hyperparameters the deepfake study's R analysis used with
         ``trainControl(method="none")``: 500 trees at ``mtry=4`` for the
         forest (a value chosen for its 8-feature table -- scikit-learn
         clamps it if you have fewer), 20 boosting iterations, and
         ``C=0.25``, which is the single row of `caret`'s own ``svmRadial``
         grid at ``tuneLength=1``. ``"default"`` leaves scikit-learn's
-        defaults in place, which is the better starting point on data that
-        is not Paper 1's.
+        defaults in place, which is the better starting point on any other
+        dataset. ``"paper1"`` stays the default only so that existing code
+        keeps reproducing the published numbers.
     random_state : int, optional
         Seeds the estimator. Logistic regression is deterministic and
         ignores it.
@@ -231,8 +238,8 @@ def fit_classifiers(models: dict[str, Pipeline], X, y) -> dict[str, Pipeline]:
         Training features -- the selected feature columns only, with no
         metadata columns.
     y : array-like
-        Training labels. Strings such as ``"real"``/``"fake"`` are fine and
-        are carried through to
+        Training labels, two classes or more. Strings such as
+        ``"happy"``/``"sad"``/``"angry"`` are fine and are carried through to
         :func:`facedyn.evaluation.evaluate_models`.
 
     Returns

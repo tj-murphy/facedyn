@@ -4,7 +4,9 @@ import pytest
 
 from facedyn.splitting import (
     RepeatedStratifiedGroupKFold,
+    group_report,
     group_train_test_split,
+    groups_from_column,
     pair_group_report,
     pair_groups,
     pair_groups_from_filenames,
@@ -344,3 +346,210 @@ def test_repeated_grouped_cv_requires_groups():
 
     with pytest.raises(ValueError, match="requires groups"):
         list(RepeatedStratifiedGroupKFold().split(df[["feature"]], y))
+
+
+# --- participant (repeated-measures) grouping -----------------------------
+
+
+def make_repeated_measures_df(
+    n_participants: int = 10,
+    videos_per_session: int = 3,
+    sessions=("drug", "placebo"),
+    frames_per_video: int = 3,
+    classes=("happy", "sad", "angry"),
+) -> pd.DataFrame:
+    """Frame-level data: several videos per participant, nested in sessions.
+
+    Video ids are deliberately not prefixed by participant in sorted order
+    (``v{k}`` counts up across participants), so nothing about the ids
+    themselves reveals the grouping.
+    """
+    rows = []
+    k = 0
+    for p in range(n_participants):
+        for session in sessions:
+            for v in range(videos_per_session):
+                label = classes[(p + v) % len(classes)]
+                for frame in range(frames_per_video):
+                    rows.append({
+                        "video_filename": f"v{k:03d}",
+                        "participant": f"P{p:02d}",
+                        "session": session,
+                        "emotion": label,
+                        "frame": frame,
+                    })
+                k += 1
+    return pd.DataFrame(rows)
+
+
+def test_group_split_by_participant_keeps_each_participant_on_one_side():
+    df = make_repeated_measures_df(n_participants=10)
+    train_df, test_df = group_train_test_split(
+        df, train_size=0.8, random_state=0, group_col="participant"
+    )
+
+    assert set(train_df["participant"]).isdisjoint(set(test_df["participant"]))
+    assert set(train_df["video_filename"]).isdisjoint(set(test_df["video_filename"]))
+    assert len(train_df) + len(test_df) == len(df)
+    # train_size is a fraction of participants, not of videos.
+    assert train_df["participant"].nunique() == 8
+    assert test_df["participant"].nunique() == 2
+
+
+def test_group_split_by_participant_keeps_both_sessions_together():
+    df = make_repeated_measures_df(n_participants=10)
+    for seed in range(5):
+        train_df, test_df = group_train_test_split(
+            df, random_state=seed, group_col="participant"
+        )
+        for side in (train_df, test_df):
+            assert (side.groupby("participant")["session"].nunique() == 2).all()
+
+
+def test_group_split_without_group_col_reproduces_the_video_level_split():
+    # group_col=None must leave the v1.0 behaviour untouched: same rows,
+    # same order, as GroupShuffleSplit on video_col directly.
+    from sklearn.model_selection import GroupShuffleSplit
+
+    df = make_repeated_measures_df(n_participants=6)
+    train_df, test_df = group_train_test_split(df, train_size=0.8, random_state=3)
+
+    splitter = GroupShuffleSplit(n_splits=1, train_size=0.8, random_state=3)
+    train_idx, test_idx = next(splitter.split(df, groups=df["video_filename"]))
+    pd.testing.assert_frame_equal(train_df, df.iloc[train_idx])
+    pd.testing.assert_frame_equal(test_df, df.iloc[test_idx])
+
+    explicit_train, explicit_test = group_train_test_split(
+        df, train_size=0.8, random_state=3, group_col="video_filename"
+    )
+    pd.testing.assert_frame_equal(train_df, explicit_train)
+    pd.testing.assert_frame_equal(test_df, explicit_test)
+
+
+def test_group_split_rejects_a_video_in_two_participants():
+    df = make_repeated_measures_df(n_participants=3)
+    df.loc[df.index[0], "participant"] = "P99"  # one frame disagrees
+
+    with pytest.raises(ValueError, match="single 'participant' value"):
+        group_train_test_split(df, random_state=0, group_col="participant")
+
+
+def test_group_split_rejects_missing_group_ids():
+    df = make_repeated_measures_df(n_participants=3)
+    df.loc[df["video_filename"] == "v000", "participant"] = np.nan
+
+    with pytest.raises(ValueError, match="missing"):
+        group_train_test_split(df, random_state=0, group_col="participant")
+
+
+def test_groups_from_column_returns_one_id_per_row():
+    df = make_repeated_measures_df(n_participants=4)
+    groups = groups_from_column(df, "participant")
+
+    assert len(groups) == len(df)
+    assert list(groups) == df["participant"].tolist()
+
+
+def test_groups_from_column_aligns_with_pivot_features_wide():
+    from facedyn.features.reshape import pivot_features_wide
+
+    frames = make_repeated_measures_df(n_participants=5)
+    # One row per (video, series), as feature extractors return it, in an
+    # order unrelated to participant, so alignment cannot be by accident.
+    per_video = frames.drop_duplicates("video_filename")[
+        ["video_filename", "participant", "emotion"]
+    ]
+    rng = np.random.default_rng(0)
+    long = pd.concat(
+        [per_video.assign(series=s, mean=rng.normal(size=len(per_video)))
+         for s in ("AU01_r", "AU12_r")]
+    ).sample(frac=1, random_state=1)
+
+    wide = pivot_features_wide(long, feature_columns=["mean"])
+    truth = dict(zip(per_video["video_filename"], per_video["participant"]))
+    expected = [truth[v] for v in wide["video_filename"]]
+
+    # Directly from the wide table (participant carried through as id_var) ...
+    assert list(groups_from_column(wide, "participant")) == expected
+    # ... or from the frames, aligned to the wide table's video order.
+    assert list(
+        groups_from_column(frames, "participant", videos=wide["video_filename"])
+    ) == expected
+
+
+def test_groups_from_column_with_videos_rejects_unknown_videos():
+    df = make_repeated_measures_df(n_participants=2)
+    with pytest.raises(KeyError, match="not in df"):
+        groups_from_column(df, "participant", videos=["v000", "nope"])
+
+
+def test_groups_from_column_rejects_a_video_in_two_participants():
+    df = make_repeated_measures_df(n_participants=2)
+    df.loc[df.index[0], "participant"] = "P99"
+    with pytest.raises(ValueError, match="single 'participant' value"):
+        groups_from_column(df, "participant")
+
+
+def test_groups_from_column_missing_column_raises():
+    df = make_repeated_measures_df(n_participants=2)
+    with pytest.raises(KeyError, match="subject"):
+        groups_from_column(df, "subject")
+
+
+def test_participant_groups_never_split_across_cv_folds():
+    df = make_repeated_measures_df(n_participants=15, frames_per_video=1)
+    groups = groups_from_column(df, "participant")
+    y = df["emotion"].to_numpy()
+    X = np.zeros((len(df), 1))
+
+    cv = RepeatedStratifiedGroupKFold(n_splits=5, n_repeats=3, random_state=0)
+    for train_idx, test_idx in cv.split(X, y, groups):
+        assert not set(groups[train_idx]) & set(groups[test_idx])
+        # Both sessions of a test participant are in the test fold.
+        test_rows = df.iloc[test_idx]
+        assert (test_rows.groupby("participant")["session"].nunique() == 2).all()
+
+
+def test_group_report_counts_videos_per_group():
+    df = make_repeated_measures_df(n_participants=3, videos_per_session=2, frames_per_video=4)
+    report = group_report(df, "participant")
+
+    assert report.columns.tolist() == ["participant", "n_videos"]
+    assert report["participant"].tolist() == ["P00", "P01", "P02"]
+    assert report["n_videos"].tolist() == [4, 4, 4]  # 2 videos x 2 sessions
+
+
+def test_group_report_reads_the_same_on_frame_and_video_level_tables():
+    frames = make_repeated_measures_df(n_participants=4, frames_per_video=5)
+    videos = frames.drop_duplicates("video_filename")
+
+    pd.testing.assert_frame_equal(
+        group_report(frames, "participant", label_col="emotion"),
+        group_report(videos, "participant", label_col="emotion"),
+    )
+
+
+def test_group_report_class_balance_per_group():
+    df = make_repeated_measures_df(
+        n_participants=2, videos_per_session=2, sessions=("s1",), frames_per_video=1,
+        classes=("happy", "sad", "angry"),
+    )
+    report = group_report(df, "participant", label_col="emotion")
+
+    # P00 -> happy, sad; P01 -> sad, angry.
+    assert report.columns.tolist() == [
+        "participant", "n_videos", "n_angry", "n_happy", "n_sad", "n_classes"
+    ]
+    assert report.to_dict("records") == [
+        {"participant": "P00", "n_videos": 2, "n_angry": 0, "n_happy": 1,
+         "n_sad": 1, "n_classes": 2},
+        {"participant": "P01", "n_videos": 2, "n_angry": 1, "n_happy": 0,
+         "n_sad": 1, "n_classes": 2},
+    ]
+
+
+def test_group_report_rejects_a_video_with_two_labels():
+    df = make_repeated_measures_df(n_participants=2)
+    df.loc[df.index[0], "emotion"] = "surprise"
+    with pytest.raises(ValueError, match="single 'emotion' value"):
+        group_report(df, "participant", label_col="emotion")

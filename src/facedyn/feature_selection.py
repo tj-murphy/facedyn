@@ -3,10 +3,11 @@
 `final_analysis_NMF_check.Rmd` also runs `caret::findCorrelation` and
 `caret::rfe`, but neither feeds the classifier's feature set -- both are
 diagnostic-only, printed and never referenced again. Boruta is the one
-method whose output the real analysis actually uses downstream.
+method whose output the R analysis actually uses downstream.
 
-**Why this module reports stability across seeds by default.** Paper 1
-ran Boruta once, at `set.seed(12345)`, and read 8 confirmed features off
+**Why this module reports stability across seeds by default.** The deepfake
+study that facedyn was first built for (Murphy, Cook & Cuve, in prep) ran
+Boruta once, at `set.seed(12345)`, and read 8 confirmed features off
 the resulting plot. That run reproduces exactly (3 Confirmed + 6
 Tentative, then `TentativeRoughFix` promotes 5 of the 6). But re-running
 the identical R code at other seeds returns only 3-5 of those same 8
@@ -155,7 +156,7 @@ def oob_permutation_importance(
     scale roughly ten times larger. It disagreed with R badly enough to
     look like evidence that permutation importance was the wrong choice.
     It was evidence that the implementation was. Checked against
-    `ranger` on the real Paper 1 data, this function's top feature
+    `ranger` on the deepfake study's data, this function's top feature
     scores 3.796 against `ranger`'s 3.819.
 
     Uses `sklearn.ensemble._forest`'s bootstrap-index helpers, which are
@@ -304,7 +305,7 @@ class BorutaRun:
         ``"Confirmed"``, ``"Tentative"``, ``"Rejected"`` per feature.
     rough_fixed_decisions : np.ndarray of object
         Decisions after :func:`tentative_rough_fix` -- no ``"Tentative"``
-        remains. This is what Paper 1 read its 8 features off.
+        remains. This is what the deepfake study read its 8 features off.
     importance_history : np.ndarray of shape (n_iterations, n_features)
     shadow_history : np.ndarray of shape (n_iterations, 3)
         Per-iteration ``(min, mean, max)`` over the shadow features.
@@ -391,9 +392,9 @@ def tentative_rough_fix(
     This is a real port of the rule, not the coarse stand-in the previous
     `BorutaPy`-based implementation had to use (which kept *every*
     tentative feature outright, since `BorutaPy` never exposes the shadow
-    history this comparison needs). On Paper 1's real data the difference
+    history this comparison needs). On the deepfake study's data the difference
     is visible: R's seed-12345 run leaves 6 tentative features and this
-    rule promotes 5 of them, giving the paper's 8.
+    rule promotes 5 of them, giving that study's 8.
 
     Parameters
     ----------
@@ -515,7 +516,7 @@ def correlated_feature_clusters(
     between correlated predictors more or less arbitrarily: if five
     features carry the same signal, each run may crown a different one.
     Selection then looks unstable at the feature level while being
-    perfectly stable at the cluster level. On Paper 1's data the AU12
+    perfectly stable at the cluster level. On the deepfake study's data the AU12
     autocorrelation family correlates at up to ``|r| = 0.88`` and
     accounts for essentially all of the churn between seeds.
 
@@ -527,7 +528,7 @@ def correlated_feature_clusters(
     ``1 - threshold``: two groups merge when the *mean* absolute
     correlation between their members reaches `threshold`. Average
     linkage rather than single linkage deliberately -- single linkage
-    merges on the strongest pair alone, which on Paper 1's data chains
+    merges on the strongest pair alone, which on the deepfake study's data chains
     13 features into one cluster at the same cutoff where average
     linkage's largest is 6.
 
@@ -545,7 +546,7 @@ def correlated_feature_clusters(
 
         **Not 0.9, and the difference matters.** `caret::findCorrelation`
         was called at 0.9 in `final_analysis_NMF_check.Rmd`, but that
-        cutoff finds nothing useful here: on Paper 1's real data it
+        cutoff finds nothing useful here: on the deepfake study's data it
         yields only 2-member clusters and leaves every one of the AU12
         autocorrelation features a singleton -- including the four that
         demonstrably trade places between Boruta runs
@@ -627,7 +628,7 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
 
     **Runs across `n_repeats` seeds by default, and this is the point of
     the class.** A single Boruta run on correlated features returns a
-    confident-looking list that is substantially noise: Paper 1's
+    confident-looking list that is substantially noise: the deepfake study's
     published 8 features come from one run at ``set.seed(12345)``, and
     re-running the identical R code at other seeds recovers only 3-5 of
     them. Nothing in a single run's output reveals that. Here,
@@ -644,8 +645,8 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
     no individual member is.
 
     **What repeating the runs does and does not buy you.** Measured on
-    Paper 1's data against its held-out test set, a stability-selected set
-    scores the same as the paper's single-run selection (0.710 vs 0.706 --
+    the deepfake study's data against its held-out test set, a
+    stability-selected set scores the same as that study's single-run selection (0.710 vs 0.706 --
     a difference well inside the +-0.11 confidence interval an n=94 test
     set supports), using half as many features. So this is **not** a way
     to get a more accurate classifier; it is a way to get a selection that
@@ -673,7 +674,7 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
         runs". It was lowered after :mod:`facedyn.tuning` made it possible
         to sweep the threshold on data held out of *training*, rather than
         on the held-out test set that had been the only evidence
-        available. On Paper 1's 370 videos, three sub-train/validation
+        available. On the deepfake study's 370 videos, three sub-train/validation
         splits agreeing on the shape of the curve:
 
         | threshold | features | validation ROC-AUC |
@@ -807,7 +808,7 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
             warnings.warn(
                 "n_repeats=1 runs Boruta once, which cannot show how stable its "
                 "selection is. On correlated features a single run routinely "
-                "confirms a different set each seed -- Paper 1's published "
+                "confirms a different set each seed -- one published "
                 "8-feature result recovers only 3-5 of itself when reseeded. "
                 "Use n_repeats > 1 (the default is 20) unless you specifically "
                 "want to reproduce a single-run result.",
@@ -1068,8 +1069,8 @@ def plot_boruta_importance(
     """Box plot of per-feature importance across a run's iterations.
 
     The equivalent of R's ``plot(TentativeRoughFix(boruta_output))`` --
-    the plot Paper 1's 8 features were read off (its Figure 2A). Each box
-    summarises one feature's importance over the iterations it survived,
+    the plot the deepfake study's 8 features were read off (its Figure
+    2A). Each box summarises one feature's importance over the iterations it survived,
     coloured by its rough-fixed decision, with the shadow
     minimum/mean/maximum distributions drawn alongside as the reference
     Boruta actually tests against.

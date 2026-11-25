@@ -19,8 +19,8 @@ class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
     gets its own anchor and the output is non-negative whatever the input.
     Only mean and SD are frozen from `fit`.
 
-    Both replicate the R code rather than the paper's prose, which
-    describes this step imprecisely. See `PIPELINE.md` step 3.
+    Both replicate the original R code rather than the deepfake study's
+    prose, which describes this step imprecisely. See `PIPELINE.md` step 3.
 
     Parameters
     ----------

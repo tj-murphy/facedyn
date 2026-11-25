@@ -12,7 +12,14 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import (
+    balanced_accuracy_score,
+    cohen_kappa_score,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
 
 from facedyn.classifiers import make_classifier, make_classifiers
 from facedyn.evaluation import (
@@ -21,11 +28,13 @@ from facedyn.evaluation import (
     cross_validate_grouped,
     delong_roc_test,
     evaluate_models,
+    pairwise_contrasts,
     plot_accuracy_comparison,
     plot_confusion_matrix,
     plot_decision_boundary,
     plot_probability_distributions,
     plot_roc_curves,
+    plot_roc_ovr,
     roc_auc_delong_ci,
 )
 from facedyn.splitting import pair_groups
@@ -421,3 +430,284 @@ def test_plot_accuracy_comparison_draws_a_bar_per_model():
 def test_plot_accuracy_comparison_rejects_the_wrong_table():
     with pytest.raises(ValueError, match="missing"):
         plot_accuracy_comparison(pd.DataFrame({"roc_auc": [0.7]}))
+
+
+# --- multiclass ----------------------------------------------------------
+
+CLASSES3 = ["angry", "happy", "sad"]
+
+
+def make_three_class(n_per_class: int = 40, separation: float = 1.5, seed: int = 0):
+    """Video-level table with three classes separated along two features."""
+    rng = np.random.default_rng(seed)
+    centres = {"angry": (0, 0), "happy": (separation, 0), "sad": (0, separation)}
+    rows = []
+    for label, (cx, cy) in centres.items():
+        for i in range(n_per_class):
+            rows.append({
+                "video_filename": f"{label}_{i}",
+                "participant": f"p{i % 10}",
+                "emotion": label,
+                "f0": cx + rng.normal(),
+                "f1": cy + rng.normal(),
+                "f2": rng.normal(),
+            })
+    df = pd.DataFrame(rows)
+    return df, df[["f0", "f1", "f2"]], df["emotion"].to_numpy()
+
+
+@pytest.fixture(scope="module")
+def three_class_fit():
+    df, X, y = make_three_class()
+    model = make_classifier("logistic_regression").fit(X, y)
+    return X, y, model
+
+
+@pytest.mark.filterwarnings("ignore:Setting penalty=None")
+def test_multiclass_metrics_match_sklearn(three_class_fit):
+    X, y, model = three_class_fit
+    y_pred = model.predict(X)
+    proba = model.predict_proba(X)
+
+    m = classification_metrics(y, y_pred, proba, labels=model.classes_)
+
+    assert m["n"] == len(y)
+    assert m["accuracy"] == pytest.approx(np.mean(y == y_pred))
+    assert m["balanced_accuracy"] == pytest.approx(balanced_accuracy_score(y, y_pred))
+    assert m["macro_f1"] == pytest.approx(f1_score(y, y_pred, average="macro"))
+    assert m["kappa"] == pytest.approx(cohen_kappa_score(y, y_pred))
+    assert m["roc_auc"] == pytest.approx(
+        roc_auc_score(y, proba, multi_class="ovr", average="macro")
+    )
+    per_class_auc = roc_auc_score(y, proba, multi_class="ovr", average=None)
+    recalls = recall_score(y, y_pred, average=None, labels=CLASSES3)
+    precisions = precision_score(y, y_pred, average=None, labels=CLASSES3)
+    for k, cls in enumerate(CLASSES3):
+        assert m[f"roc_auc_{cls}"] == pytest.approx(per_class_auc[k])
+        assert m[f"recall_{cls}"] == pytest.approx(recalls[k])
+        assert m[f"precision_{cls}"] == pytest.approx(precisions[k])
+        assert m[f"roc_auc_{cls}_ci_lower"] < m[f"roc_auc_{cls}"] < m[f"roc_auc_{cls}_ci_upper"]
+    # Binary-only fields do not appear.
+    assert "mcnemar_p" not in m and "sensitivity" not in m
+
+
+def test_multiclass_metrics_without_scores_leave_auc_missing():
+    y_true = np.array(["a", "b", "c", "a", "b", "c"])
+    y_pred = np.array(["a", "b", "b", "a", "c", "c"])
+    m = classification_metrics(y_true, y_pred)
+    assert np.isnan(m["roc_auc"]) and np.isnan(m["roc_auc_a"])
+    assert m["accuracy"] == pytest.approx(4 / 6)
+
+
+def test_multiclass_metrics_count_a_never_predicted_class_as_zero_f1():
+    y_true = np.array(["a", "a", "b", "b", "c", "c"])
+    y_pred = np.array(["a", "a", "b", "b", "a", "b"])
+    m = classification_metrics(y_true, y_pred)
+    assert m["f1_c"] == 0.0
+    assert np.isnan(m["precision_c"])
+    assert m["macro_f1"] == pytest.approx(
+        f1_score(y_true, y_pred, average="macro", zero_division=0)
+    )
+
+
+def test_multiclass_auc_is_nan_for_a_class_missing_from_the_reference():
+    y_true = np.array(["a", "a", "b", "b"])
+    y_pred = np.array(["a", "b", "b", "b"])
+    proba = np.array([[.8, .1, .1], [.4, .5, .1], [.1, .8, .1], [.2, .7, .1]])
+    m = classification_metrics(y_true, y_pred, proba, labels=["a", "b", "c"])
+    assert np.isnan(m["roc_auc_c"])
+    assert np.isnan(m["roc_auc"])
+    assert m["roc_auc_a"] == pytest.approx(1.0)
+    # Only classes that occur count toward balanced accuracy.
+    assert m["balanced_accuracy"] == pytest.approx((0.5 + 1.0) / 2)
+
+
+def test_multiclass_rejects_a_positive_label_and_1d_scores():
+    y = np.array(["a", "b", "c"])
+    with pytest.raises(ValueError, match="pairwise_contrasts"):
+        classification_metrics(y, y, positive_label="a")
+    with pytest.raises(ValueError, match="must be 2-D"):
+        classification_metrics(y, y, np.array([0.1, 0.5, 0.9]))
+
+
+def test_score_columns_must_match_the_classes():
+    y = np.array(["a", "b", "c"])
+    with pytest.raises(ValueError, match="Pass labels="):
+        classification_metrics(y, y, np.full((3, 2), 0.5))
+
+
+def test_labels_must_cover_the_data():
+    y = np.array(["a", "b", "c"])
+    with pytest.raises(ValueError, match="not in"):
+        classification_metrics(y, y, labels=["a", "b"])
+
+
+def test_binary_metrics_accept_two_column_scores():
+    rng = np.random.default_rng(0)
+    y_true = np.array(["fake"] * 30 + ["real"] * 30)
+    p_fake = np.concatenate([rng.beta(4, 2, 30), rng.beta(2, 4, 30)])
+    y_pred = np.where(p_fake > 0.5, "fake", "real")
+    proba = np.column_stack([p_fake, 1 - p_fake])  # columns: fake, real (sorted)
+
+    one_d = classification_metrics(y_true, y_pred, p_fake, positive_label="fake")
+    two_d = classification_metrics(y_true, y_pred, proba, positive_label="fake")
+    pd.testing.assert_series_equal(one_d, two_d)
+    # Still no guessing which class is positive for string labels.
+    with pytest.raises(ValueError, match="positive_label is required"):
+        classification_metrics(y_true, y_pred, proba)
+
+
+def test_binary_path_is_unchanged_by_the_labels_argument():
+    y_true, y_pred = make_labels(tn=30, fp=10, fn=5, tp=55)
+    score = np.where(y_pred == 1, 0.8, 0.2)
+    pd.testing.assert_series_equal(
+        classification_metrics(y_true, y_pred, score),
+        classification_metrics(y_true, y_pred, score, labels=[0, 1]),
+    )
+
+
+@pytest.mark.filterwarnings("ignore:Setting penalty=None")
+def test_evaluate_models_scores_multiclass_models():
+    df, X, y = make_three_class()
+    models = make_classifiers(random_state=0)
+    for model in models.values():
+        model.fit(X, y)
+
+    results = evaluate_models(models, X, y)
+
+    assert list(results.index) == list(models)
+    assert results["roc_auc"].between(0.5, 1).all()
+    for cls in CLASSES3:
+        assert f"roc_auc_{cls}" in results.columns
+    with pytest.raises(ValueError, match="positive_label"):
+        evaluate_models(models, X, y, positive_label="happy")
+
+
+def test_confusion_matrix_frame_handles_three_classes():
+    y_true = ["a", "a", "b", "b", "c", "c"]
+    y_pred = ["a", "b", "b", "b", "c", "a"]
+    table = confusion_matrix_frame(y_true, y_pred)
+    assert table.shape == (3, 3)
+    assert table.loc["b", "a"] == 1  # predicted b, truly a
+    assert table.loc["a", "c"] == 1
+    assert np.trace(table.to_numpy()) == 4
+    assert table.to_numpy().sum() == 6
+
+
+def test_pairwise_contrasts_builds_every_pair():
+    df, _, _ = make_three_class(n_per_class=5)
+    contrasts = pairwise_contrasts(df, "emotion")
+
+    assert list(contrasts) == [("angry", "happy"), ("angry", "sad"), ("happy", "sad")]
+    for pair, subset in contrasts.items():
+        assert set(subset["emotion"]) == set(pair)
+        assert len(subset) == 10
+        assert subset.index.isin(df.index).all()
+
+
+def test_pairwise_contrasts_honours_given_pairs_and_rejects_unknown_classes():
+    df, _, _ = make_three_class(n_per_class=5)
+    contrasts = pairwise_contrasts(df, "emotion", pairs=[("sad", "happy")])
+    assert list(contrasts) == [("sad", "happy")]
+    with pytest.raises(ValueError, match="not found"):
+        pairwise_contrasts(df, "emotion", pairs=[("happy", "surprised")])
+    with pytest.raises(ValueError, match="two different"):
+        pairwise_contrasts(df, "emotion", pairs=[("happy", "happy")])
+    with pytest.raises(KeyError):
+        pairwise_contrasts(df, "label")
+
+
+def test_pairwise_contrasts_feed_binary_delong(three_class_fit):
+    df, X, y = make_three_class()
+    for (a, b), subset in pairwise_contrasts(df, "emotion").items():
+        Xs, ys = subset[["f0", "f1", "f2"]], subset["emotion"].to_numpy()
+        model = make_classifier("random_forest", random_state=0, n_estimators=20).fit(Xs, ys)
+        auc, lower, upper = roc_auc_delong_ci(
+            ys, model.predict_proba(Xs)[:, 1], positive_label=b
+        )
+        assert lower <= auc <= upper
+
+
+@pytest.mark.filterwarnings("ignore:Setting penalty=None")
+def test_plot_roc_curves_draws_one_curve_per_class_for_one_model(three_class_fit):
+    X, y, model = three_class_fit
+    ax = plot_roc_curves({"logistic_regression": model}, X, y)
+    assert len(ax.lines) == 3 + 1  # three classes + diagonal
+    texts = [t.get_text() for t in ax.get_legend().get_texts()]
+    assert any(t.startswith("happy vs rest") for t in texts)
+    assert "One-vs-rest" in ax.get_title()
+    plt.close(ax.figure)
+
+
+@pytest.mark.filterwarnings("ignore:Setting penalty=None")
+def test_plot_roc_curves_draws_class_by_model_curves_for_several_models():
+    df, X, y = make_three_class()
+    models = make_classifiers(["random_forest", "logistic_regression"], random_state=0)
+    for model in models.values():
+        model.fit(X, y)
+    ax = plot_roc_curves(models, X, y)
+    assert len(ax.lines) == 2 * 3 + 1
+    plt.close(ax.figure)
+
+
+def test_plot_roc_ovr_works_from_probabilities_alone(three_class_fit):
+    X, y, model = three_class_fit
+    proba = pd.DataFrame(model.predict_proba(X), columns=[f"proba_{c}" for c in CLASSES3])
+    ax = plot_roc_ovr(y, proba, labels=CLASSES3)
+    assert len(ax.lines) == 4
+    plt.close(ax.figure)
+    # A class absent from y_true gets no curve.
+    keep = y != "sad"
+    ax = plot_roc_ovr(y[keep], proba[keep], labels=CLASSES3)
+    assert len(ax.lines) == 3
+    plt.close(ax.figure)
+    with pytest.raises(ValueError, match="one column per class"):
+        plot_roc_ovr(y, proba.iloc[:, :2], labels=CLASSES3)
+
+
+def test_plot_confusion_matrix_three_classes_normalised_by_reference():
+    y_true = ["a"] * 4 + ["b"] * 2 + ["c"] * 2
+    y_pred = ["a", "a", "a", "b", "b", "b", "c", "a"]
+    ax = plot_confusion_matrix(y_true, y_pred, normalize="reference", annotate="both")
+    texts = {t.get_text() for t in ax.texts}
+    assert len(ax.texts) == 9
+    assert "3\n(0.75)" in texts  # 3 of 4 true a predicted a
+    assert "1\n(0.50)" in texts  # 1 of 2 true c predicted a
+    shading = ax.images[0].get_array()
+    np.testing.assert_allclose(np.asarray(shading).sum(axis=0), 1.0)
+    plt.close(ax.figure)
+
+
+def test_plot_confusion_matrix_prediction_normalisation_matches_true():
+    y_true = ["a", "a", "b", "b", "c", "c"]
+    y_pred = ["a", "b", "b", "b", "c", "a"]
+    ax_true = plot_confusion_matrix(y_true, y_pred, normalize=True)
+    ax_pred = plot_confusion_matrix(y_true, y_pred, normalize="prediction")
+    np.testing.assert_allclose(
+        np.asarray(ax_true.images[0].get_array()), np.asarray(ax_pred.images[0].get_array())
+    )
+    plt.close("all")
+
+
+def test_plot_confusion_matrix_handles_a_never_predicted_class():
+    ax = plot_confusion_matrix(["a", "b", "c"], ["a", "b", "b"], labels=["a", "b", "c"],
+                               normalize=True, annotate="proportion")
+    assert np.isfinite(np.asarray(ax.images[0].get_array())).all()
+    plt.close(ax.figure)
+
+
+def test_plot_confusion_matrix_rejects_bad_options():
+    with pytest.raises(ValueError, match="normalize"):
+        plot_confusion_matrix([0, 1], [0, 1], normalize="columns")
+    with pytest.raises(ValueError, match="needs normalize"):
+        plot_confusion_matrix([0, 1], [0, 1], annotate="proportion")
+
+
+def test_plot_probability_distributions_names_the_rest_group():
+    rng = np.random.default_rng(0)
+    y_true = np.array(["happy"] * 20 + ["sad"] * 20 + ["angry"] * 20)
+    score = rng.uniform(size=60)
+    ax = plot_probability_distributions(y_true, score, positive_label="happy")
+    labels = {t.get_text() for t in ax.get_legend().get_texts()}
+    assert labels == {"happy", "rest"}
+    plt.close(ax.figure)

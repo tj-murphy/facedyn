@@ -453,3 +453,50 @@ def test_plot_threshold_sweep_saves(tuned, tmp_path):
     ax = plot_threshold_sweep(result, save_path="sweep.png", output_dir=tmp_path)
     assert (tmp_path / "sweep.png").exists()
     plt.close(ax.figure)
+
+
+# --- multiclass -------------------------------------------------------------
+
+def three_class_dataset(n_per_class: int = 30, seed: int = 0):
+    """Three classes, without pairs: f_strong separates them, the rest is noise."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for k, label in enumerate(("angry", "happy", "sad")):
+        for i in range(n_per_class):
+            rows.append({
+                "video_filename": f"{label}_{i}",
+                "emotion": label,
+                "f_strong": 1.2 * k + rng.normal(),
+                **{f: rng.normal() for f in FEATURES if f != "f_strong"},
+            })
+    df = pd.DataFrame(rows)
+    groups = np.array([i % 15 for i in range(len(df))])  # 15 "participants"
+    return df, df["emotion"].to_numpy(), groups
+
+
+def test_tuner_rejects_binary_auc_for_three_classes_before_fitting():
+    df, y, groups = three_class_dataset()
+    with pytest.raises(ValueError, match="roc_auc_ovr"):
+        # A selector whose fit would fail proves the check comes first.
+        tune_selection_threshold(df, y, groups, selector=object())
+
+
+def test_sweep_rejects_binary_auc_for_three_classes():
+    df, y, _ = three_class_dataset()
+    selector = fast_selector().fit(df, y)
+    with pytest.raises(ValueError, match="roc_auc_ovr"):
+        threshold_sweep(selector, df, y, df, y, model=fast_model())
+
+
+def test_sweep_scores_three_classes_with_ovr_auc():
+    df, y, groups = three_class_dataset()
+    (sub_idx, val_idx), = _inner_splits(df, y, groups, 5, 1, random_state=0)
+    selector = fast_selector().fit(df.iloc[sub_idx], y[sub_idx])
+    sweep = threshold_sweep(
+        selector, df.iloc[sub_idx], y[sub_idx], df.iloc[val_idx], y[val_idx],
+        model=fast_model(), scoring="roc_auc_ovr",
+    )
+    scored = sweep.dropna(subset=["score"])
+    assert not scored.empty
+    assert scored["score"].between(0, 1).all()
+    assert scored["score_se"].isna().all()

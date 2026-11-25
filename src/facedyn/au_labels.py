@@ -90,3 +90,45 @@ def humanise_au_label(column: str) -> str:
 def humanise_au_labels(columns: list[str]) -> list[str]:
     """Apply :func:`humanise_au_label` to each name in a list of columns."""
     return [humanise_au_label(column) for column in columns]
+
+
+def humanise_feature_label(column: str) -> str:
+    """Convert a time-series feature column to a readable label.
+
+    facedyn's video-level feature tables name columns
+    ``f"{feature}_{series}"`` (see
+    :func:`~facedyn.features.pivot_features_wide`), e.g.
+    ``kurtosis_smth_AU12_r``. This gives ``"AU12 - Lip Corner Puller —
+    kurtosis"``. Feature names come from
+    :data:`facedyn.features.timeseries.FEATURE_NAMES`, matched longest
+    first so ``acf10_sumsq`` is not read as ``acf1``. The reverse order
+    (``AU12_r__kurtosis``) is recognised too.
+
+    A series without a recognised AU code (e.g. an NMF activation
+    ``nmf1``) is kept as it is, and a name that matches no known feature
+    falls back to :func:`humanise_au_label`.
+
+    Examples
+    --------
+    >>> humanise_feature_label("kurtosis_smth_AU12_r")
+    'AU12 - Lip Corner Puller — kurtosis'
+    >>> humanise_feature_label("acf10_sumsq_nmf2")
+    'nmf2 — acf10_sumsq'
+    >>> humanise_feature_label("AU12_r__kurtosis")
+    'AU12 - Lip Corner Puller — kurtosis'
+    """
+    # Imported here: facedyn.features imports this module.
+    from facedyn.features.timeseries import FEATURE_NAMES
+
+    names = sorted(FEATURE_NAMES, key=len, reverse=True)
+    feature = series = None
+    for name in names:
+        if column.startswith(name + "_") and len(column) > len(name) + 1:
+            feature, series = name, column[len(name) + 1:]
+            break
+        if column.endswith("_" + name) and len(column) > len(name) + 1:
+            feature, series = name, column[: -len(name) - 1].rstrip("_")
+            break
+    if feature is None:
+        return humanise_au_label(column)
+    return f"{humanise_au_label(series)} — {feature}"

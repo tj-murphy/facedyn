@@ -1,10 +1,27 @@
 """Train/test splitting and cross-validation grouping for AU data.
 
-- :func:`group_train_test_split` is the general-purpose default. It assumes
-  only that a video's frames should not be split across train and test.
+Choosing the unit of independence
+---------------------------------
+Rows that are not independent must stay on the same side of every split.
+Frames of one video are never independent, so the video is the *minimum*
+unit. In repeated-measures data -- several videos per person, possibly
+across several sessions -- the **participant** is the unit: a person's
+idiosyncratic face and expressive style are shared by all their videos, so
+a model tested on someone it also trained on is partly recognising the
+person. Sessions (e.g. drug and placebo days) nest within participant, so
+group by participant, not by session.
+
+- :func:`group_train_test_split` is the general-purpose default. It keeps a
+  video's frames together; pass ``group_col`` (e.g. ``"participant"``) to
+  keep every video from one participant together instead.
+- :func:`groups_from_column` produces the ``groups`` array cross-validation
+  needs from an existing id column (participant, scene, ...), and
+  :func:`group_report` summarises the groups and their class balance.
 - :func:`paired_train_test_split` is for designs with explicit matched
-  pairs, such as real/fake deepfake pairing, where both members must land
-  on the same side. Use it only if your data has that structure.
+  pairs, where both members must land on the same side -- for example a
+  real video and the deepfake made from it. Use it only if your data has
+  that structure. Its defaults (``isfakeorreal``, ``real``) follow the
+  deepfake study's column names; override them for your own data.
 - :func:`pair_groups` (and :func:`pair_groups_from_filenames`) produce the
   ``groups`` array cross-validation needs so a pair is never split across
   folds. On matched-pairs data this is not optional -- see `PIPELINE.md`
@@ -27,40 +44,259 @@ from sklearn.model_selection import (
 from sklearn.utils.validation import check_random_state
 
 
+def _video_to_group(df: pd.DataFrame, group_col: str, video_col: str) -> pd.Series:
+    """Map each video to its group id, checking one non-missing id per video.
+
+    Returns a Series indexed by video id (in order of first appearance).
+    """
+    for column in (video_col, group_col):
+        if column not in df:
+            raise KeyError(f"df has no column {column!r}")
+
+    if group_col == video_col:
+        videos = pd.unique(df[video_col])
+        return pd.Series(videos, index=pd.Index(videos, name=video_col), name=group_col)
+
+    missing = df[group_col].isna()
+    if missing.any():
+        offenders = sorted(df.loc[missing, video_col].astype(str).unique())[:5]
+        raise ValueError(
+            f"'{group_col}' is missing for {df.loc[missing, video_col].nunique()} "
+            f"video(s), e.g. {offenders}. Every video needs a group id; a "
+            "missing one cannot be kept apart from the rest of its group."
+        )
+
+    unique = df[[video_col, group_col]].drop_duplicates()
+    conflicting = unique[video_col].duplicated(keep=False)
+    if conflicting.any():
+        offenders = sorted(unique.loc[conflicting, video_col].astype(str).unique())[:5]
+        raise ValueError(
+            f"Each video needs a single '{group_col}' value, but these have more "
+            f"than one: {offenders}. Groups must nest videos (e.g. every video "
+            "belongs to exactly one participant)."
+        )
+    return unique.set_index(video_col)[group_col]
+
+
 def group_train_test_split(
     df: pd.DataFrame,
     train_size: float = 0.8,
     random_state: int | None = None,
     video_col: str = "video_filename",
+    group_col: str | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Random train/test split that keeps each video's rows together.
+    """Random train/test split that keeps each video's (or group's) rows together.
 
     Assumes nothing about matched pairs or class balance, so it is the
     right default for most datasets. Wraps
     :class:`sklearn.model_selection.GroupShuffleSplit`, grouping by
-    `video_col`.
+    `video_col`, or by `group_col` when given.
+
+    **Repeated-measures data: pass** ``group_col``. When each participant
+    contributes several videos (and possibly several sessions), the
+    participant is the unit of independence. Splitting by video alone puts
+    the same person on both sides of the split, so the test score partly
+    measures how well the model recognises people it has already seen.
+    Sessions nest within participant, so group by the participant column,
+    not a session column.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Video-level (frame-level) data, one row per frame. See
-        ``DATA_FORMAT.md`` for the expected shape.
+        Frame-level data (one row per frame) or video-level data (one row
+        per video). See ``DATA_FORMAT.md`` for the expected shape.
     train_size : float, default 0.8
-        Fraction of videos assigned to the training set.
+        Fraction of groups assigned to the training set: videos when
+        ``group_col`` is None, otherwise ``group_col`` values (e.g.
+        participants). With unequal group sizes the fraction of *videos* in
+        train will differ somewhat from ``train_size``.
     random_state : int, optional
         Seed for the split. Same seed -> same split.
     video_col : str, default "video_filename"
         Column identifying each video; all of a video's rows are kept
         together on one side of the split.
+    group_col : str, optional
+        Column identifying the unit of independence, e.g. ``"participant"``.
+        All rows sharing a value land on the same side. Each video must map
+        to exactly one value. If None (default), each video is its own group.
 
     Returns
     -------
     train_df, test_df : pd.DataFrame
         Row-level subsets of ``df``, disjoint and exhaustive.
+
+    Raises
+    ------
+    ValueError
+        If ``group_col`` is given and a video has a missing value or more
+        than one value in it.
+
+    Examples
+    --------
+    >>> train, test = group_train_test_split(
+    ...     frames, group_col="participant", random_state=0)  # doctest: +SKIP
     """
+    if group_col is None:
+        groups = df[video_col]
+    else:
+        _video_to_group(df, group_col, video_col)  # validate nesting
+        groups = df[group_col]
     splitter = GroupShuffleSplit(n_splits=1, train_size=train_size, random_state=random_state)
-    train_idx, test_idx = next(splitter.split(df, groups=df[video_col]))
+    train_idx, test_idx = next(splitter.split(df, groups=groups))
     return df.iloc[train_idx], df.iloc[test_idx]
+
+
+def groups_from_column(
+    df: pd.DataFrame,
+    group_col: str,
+    video_col: str = "video_filename",
+    videos=None,
+) -> np.ndarray:
+    """Group ids for cross-validation, read from an existing id column.
+
+    The repeated-measures counterpart of :func:`pair_groups`: pass the
+    result as ``groups`` to :class:`RepeatedStratifiedGroupKFold`,
+    :func:`facedyn.evaluation.cross_validate_grouped` or any scikit-learn
+    splitter that accepts ``groups``, so that every video from one
+    participant (or scene, site, ...) lands in the same fold.
+
+    For repeated-measures data the participant is the unit of independence.
+    Sessions nest within participant, so use the participant column even
+    when each participant was recorded on several days.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Data carrying both ``video_col`` and ``group_col``: frame-level
+        data, or a video-level feature table (e.g. from
+        :func:`facedyn.features.pivot_features_wide`, which carries a
+        participant column through as long as it is constant per video).
+    group_col : str
+        Column identifying the unit of independence, e.g. ``"participant"``.
+    video_col : str, default "video_filename"
+        Column identifying each video.
+    videos : array-like, optional
+        Video ids to return group ids for, in this order. Use it when the
+        feature matrix you will cross-validate does not itself carry
+        ``group_col`` -- e.g. ``videos=features["video_filename"]`` with
+        ``df`` the frame-level data. If None (default), one id is returned
+        per row of ``df``, in row order.
+
+    Returns
+    -------
+    np.ndarray
+        One group id per row of ``df``, or per entry of ``videos``.
+
+    Raises
+    ------
+    KeyError
+        If a column is absent, or an entry of ``videos`` is not in ``df``.
+    ValueError
+        If a video has a missing group id, or more than one.
+
+    See Also
+    --------
+    group_report : check the groups before cross-validating.
+    pair_groups : for matched-pairs designs.
+
+    Examples
+    --------
+    >>> wide = pivot_features_wide(features)          # keeps "participant"
+    >>> groups = groups_from_column(wide, "participant")
+    >>> cross_validate_grouped(model, X, y, groups=groups)  # doctest: +SKIP
+    """
+    video_to_group = _video_to_group(df, group_col, video_col)
+    if videos is None:
+        return df[group_col].to_numpy()
+
+    videos = pd.Index(np.asarray(videos))
+    absent = videos.difference(video_to_group.index)
+    if len(absent):
+        raise KeyError(
+            f"{len(absent)} video(s) in `videos` are not in df, e.g. "
+            f"{sorted(map(str, absent))[:3]}."
+        )
+    return video_to_group.reindex(videos).to_numpy()
+
+
+def group_report(
+    df: pd.DataFrame,
+    group_col: str,
+    video_col: str = "video_filename",
+    label_col: str | None = None,
+) -> pd.DataFrame:
+    """One row per group: how many videos it holds and, optionally, of which class.
+
+    The check to run before cross-validating repeated-measures data. Very
+    unequal group sizes make fold sizes uneven, and groups that contribute
+    only one class make stratification harder: with few groups,
+    :class:`RepeatedStratifiedGroupKFold` may not be able to give every
+    fold every class. Counts are of distinct videos, so the report reads
+    the same on frame-level and video-level tables.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Frame-level or video-level data.
+    group_col : str
+        Column identifying the unit of independence, e.g. ``"participant"``.
+    video_col : str, default "video_filename"
+        Column identifying each video.
+    label_col : str, optional
+        Class label column. If given, adds one ``n_<class>`` count column
+        per class and an ``n_classes`` column.
+
+    Returns
+    -------
+    pd.DataFrame
+        Columns ``group_col``, ``n_videos``, then (with ``label_col``) one
+        ``n_<class>`` column per class in sorted order and ``n_classes``.
+        Sorted by group id.
+
+    Raises
+    ------
+    ValueError
+        If a video has a missing or more than one group id, or (with
+        ``label_col``) more than one label.
+
+    See Also
+    --------
+    pair_group_report : the equivalent summary for matched pairs.
+
+    Examples
+    --------
+    >>> group_report(frames, "participant", label_col="emotion")  # doctest: +SKIP
+      participant  n_videos  n_angry  n_happy  n_sad  n_classes
+    0        P01        22        8        7      7          3
+    """
+    video_to_group = _video_to_group(df, group_col, video_col)
+    per_video = video_to_group.rename(group_col).reset_index()
+
+    report = (
+        per_video.groupby(group_col, sort=True)
+        .size()
+        .rename("n_videos")
+        .reset_index()
+    )
+    if label_col is None:
+        return report
+
+    if label_col not in df:
+        raise KeyError(f"df has no column {label_col!r}")
+    labels = df[[video_col, label_col]].drop_duplicates()
+    conflicting = labels[video_col].duplicated(keep=False)
+    if conflicting.any():
+        offenders = sorted(labels.loc[conflicting, video_col].astype(str).unique())[:5]
+        raise ValueError(
+            f"Each video needs a single '{label_col}' value, but these have more "
+            f"than one: {offenders}."
+        )
+    per_video = per_video.merge(labels, on=video_col, how="left")
+    counts = pd.crosstab(per_video[group_col], per_video[label_col])
+    counts = counts.reindex(sorted(counts.columns, key=str), axis=1)
+    counts.columns = [f"n_{label}" for label in counts.columns]
+    counts["n_classes"] = (counts > 0).sum(axis=1)
+    return report.merge(counts.reset_index(), on=group_col, how="left")
 
 
 def paired_train_test_split(
@@ -77,10 +313,11 @@ def paired_train_test_split(
     Use only if your data has explicit matched pairs. Otherwise use
     :func:`group_train_test_split`.
 
-    Samples a fraction of real videos and carries each one's paired fake
-    into the same split, so a pair never straddles the split. `pair_col` is
-    symmetric: a real row's value is its fake's `video_col` value, and vice
-    versa.
+    Each pair has a *source* member (``label_col == real_label``; the real
+    video in a deepfake design) and a partner. Samples a fraction of source
+    videos and carries each one's partner into the same split, so a pair
+    never straddles the split. `pair_col` is symmetric: a source row's
+    value is its partner's `video_col` value, and vice versa.
 
     Sampling uses NumPy's RNG, which differs from R's ``sample()``, so the
     exact videos selected will not match R even with the same seed. Only
@@ -91,18 +328,19 @@ def paired_train_test_split(
     df : pd.DataFrame
         Video-level (frame-level) data, one row per frame.
     train_size : float, default 0.8
-        Fraction of real videos assigned to the training set.
-        ``floor(train_size * n_real)`` real videos are sampled for train.
+        Fraction of source (``real_label``) videos assigned to the training
+        set. ``floor(train_size * n_source)`` are sampled for train.
     random_state : int, optional
         Seed for the sampling RNG. Same seed -> same split.
     video_col : str, default "video_filename"
         Column identifying each video.
     label_col : str, default "isfakeorreal"
-        Column distinguishing real vs. fake videos.
+        Column distinguishing the two members of a pair (real vs. fake in
+        a deepfake design).
     pair_col : str, default "corresponding_video"
         Column giving each video's paired counterpart's ``video_col`` value.
     real_label : str, default "real"
-        Value in ``label_col`` identifying real videos.
+        Value in ``label_col`` identifying the source member of each pair.
 
     Returns
     -------
@@ -112,29 +350,29 @@ def paired_train_test_split(
     Raises
     ------
     ValueError
-        If a sampled real video's ``pair_col`` value does not match any
-        video present in ``df`` (a broken real/fake pairing).
+        If a sampled source video's ``pair_col`` value does not match any
+        video present in ``df`` (a broken pairing).
     """
-    real_rows = df.loc[df[label_col] == real_label, [video_col, pair_col]].drop_duplicates(video_col)
-    real_to_fake = dict(zip(real_rows[video_col], real_rows[pair_col]))
-    real_videos = np.array(sorted(real_to_fake))
+    source_rows = df.loc[df[label_col] == real_label, [video_col, pair_col]].drop_duplicates(video_col)
+    source_to_partner = dict(zip(source_rows[video_col], source_rows[pair_col]))
+    source_videos = np.array(sorted(source_to_partner))
 
-    n_train = math.floor(train_size * len(real_videos))
+    n_train = math.floor(train_size * len(source_videos))
     rng = np.random.default_rng(random_state)
-    train_real_videos = rng.choice(real_videos, size=n_train, replace=False)
+    train_source_videos = rng.choice(source_videos, size=n_train, replace=False)
 
     known_videos = set(df[video_col])
-    train_fake_videos = set()
-    for real_video in train_real_videos:
-        fake_video = real_to_fake[real_video]
-        if fake_video not in known_videos:
+    train_partner_videos = set()
+    for source_video in train_source_videos:
+        partner_video = source_to_partner[source_video]
+        if partner_video not in known_videos:
             raise ValueError(
-                f"Broken pairing: real video {real_video!r} points to "
-                f"{fake_video!r} via '{pair_col}', which is not present in df."
+                f"Broken pairing: source video {source_video!r} points to "
+                f"{partner_video!r} via '{pair_col}', which is not present in df."
             )
-        train_fake_videos.add(fake_video)
+        train_partner_videos.add(partner_video)
 
-    train_videos = set(train_real_videos) | train_fake_videos
+    train_videos = set(train_source_videos) | train_partner_videos
     train_mask = df[video_col].isin(train_videos)
     return df.loc[train_mask], df.loc[~train_mask]
 
@@ -164,13 +402,14 @@ def pair_groups(
     (:class:`RepeatedStratifiedGroupKFold`,
     :class:`sklearn.model_selection.StratifiedGroupKFold`, ...).
 
-    **Why this matters on paired data.** In a real/fake design each fake is
-    generated from a specific real video and shares its scene and
-    performance, so the two carry near-identical dynamics under *opposite*
-    labels. Split a pair across folds and the model learns "dynamics like
-    this -> real" from one member, then meets its twin labelled fake:
+    **Why this matters on paired data.** When the two members of a pair
+    share their source material but carry *opposite* labels -- in a
+    deepfake design each fake is generated from a specific real video and
+    shares its scene and performance -- they have near-identical dynamics.
+    Split a pair across folds and the model learns "dynamics like this ->
+    class A" from one member, then meets its twin labelled class B:
     predictions are systematically inverted rather than merely uninformed.
-    Measured on Paper 1's data with all 108 features, plain
+    Measured on the deepfake study's data with all 108 features, plain
     `StratifiedKFold` scores a random forest at **0.394** ROC-AUC -- below
     chance -- against **0.640** with the pairs grouped. Leakage usually
     inflates a score; here it deflates it, which is what makes it easy to
@@ -245,8 +484,8 @@ def pair_groups(
         )
 
     # Union-find over the pointers, treated as undirected. Following them
-    # in one direction only would leave a fake whose own `pair_col` is
-    # blank in a group of its own, i.e. in a different fold from the real
+    # in one direction only would leave a partner whose own `pair_col` is
+    # blank in a group of its own, i.e. in a different fold from the source
     # video that points at it -- the exact split this function prevents.
     parent = {video: video for video in known}
 
@@ -307,10 +546,11 @@ def pair_groups_from_filenames(
     else to pair on.
 
     **The default rule is specific to the Google DeepFakeDetection naming
-    scheme** used by Paper 1: a real video is ``{actor}__{scene}`` and the
-    fake built from it is ``{actor}_{other}__{scene}__{hash}``, so dropping
-    the second actor id and the hash recovers the source video. On Paper
-    1's real files this resolves 100% of fakes, giving exactly 185 groups
+    scheme** used by the deepfake study: a real video is
+    ``{actor}__{scene}`` and the fake built from it is
+    ``{actor}_{other}__{scene}__{hash}``, so dropping the second actor id
+    and the hash recovers the source video. On that study's files this
+    resolves 100% of fakes, giving exactly 185 groups
     of 2 in the training set and 47 in the test set. **Check
     :func:`pair_group_report` on your own data before trusting it**, and
     pass ``key_fn`` for any other naming convention.
@@ -447,10 +687,10 @@ class RepeatedStratifiedGroupKFold(BaseCrossValidator):
     -----
     The repeats are randomised **here** rather than by delegating to
     `StratifiedGroupKFold`'s own ``shuffle``, because that argument does
-    nothing on precisely this package's data. Up to scikit-learn 1.7 it
+    nothing on balanced matched-pairs data. Up to scikit-learn 1.7 it
     shuffles the per-group *class-count matrix* without carrying the
     group identities along; on a balanced matched-pairs design every
-    group contributes the same counts (one real, one fake), so shuffling
+    group contributes the same counts (one of each class), so shuffling
     rows of an array of identical rows changes nothing and every seed
     returns identical folds. scikit-learn 1.8 shuffles a permutation
     array instead and does vary. Rather than behave differently by
@@ -488,10 +728,10 @@ class RepeatedStratifiedGroupKFold(BaseCrossValidator):
         if groups is None:
             raise ValueError(
                 "RepeatedStratifiedGroupKFold requires groups. Build them with "
-                "facedyn.splitting.pair_groups (or pair_groups_from_filenames) "
-                "so matched pairs stay in the same fold; without grouping, a "
-                "pair split across folds drives ROC-AUC below chance on this "
-                "kind of data."
+                "facedyn.splitting.groups_from_column (repeated measures, e.g. "
+                "one group per participant) or pair_groups (matched pairs), so "
+                "dependent observations stay in the same fold; without grouping, "
+                "scores can be inflated or, on matched pairs, driven below chance."
             )
         if y is None:
             raise ValueError("RepeatedStratifiedGroupKFold requires y to stratify on.")
