@@ -19,6 +19,12 @@ from sklearn.utils.validation import check_is_fitted
 
 from facedyn.features.reshape import apply_rowwise, split_wide
 
+__all__ = [
+    "CallableFeatureExtractor",
+    "RFeatureExtractor",
+    "cmfts_r_features",
+]
+
 
 def _as_feature_series(result, feature_names=None) -> pd.Series:
     """Normalise an extractor's return value into a ``pd.Series``.
@@ -51,7 +57,7 @@ def _as_feature_series(result, feature_names=None) -> pd.Series:
     return pd.Series(values, index=list(feature_names))
 
 
-class CallableFeatureExtractor(BaseEstimator, TransformerMixin):
+class CallableFeatureExtractor(TransformerMixin, BaseEstimator):
     """Wrap a Python per-series feature function as a facedyn transformer.
 
     Parameters
@@ -94,11 +100,13 @@ class CallableFeatureExtractor(BaseEstimator, TransformerMixin):
         self.n_jobs = n_jobs
         self.verbose = verbose
 
-    def fit(self, X: pd.DataFrame, y=None) -> "CallableFeatureExtractor":
+    def fit(self, X: pd.DataFrame, y=None) -> CallableFeatureExtractor:
+        """Do nothing: the extractor learns nothing from data. Returns ``self``."""
         self.fitted_ = True
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply ``fn`` to every row's series and return metadata plus features."""
         check_is_fitted(self, "fitted_")
         fn, names = self.fn, self.feature_names
 
@@ -116,6 +124,7 @@ class CallableFeatureExtractor(BaseEstimator, TransformerMixin):
         return out
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Names of the feature columns from the last ``transform`` call."""
         check_is_fitted(self, "feature_names_")
         return np.asarray(self.feature_names_, dtype=object)
 
@@ -158,7 +167,7 @@ def _require_rpy2(package: str):
         ) from exc
 
 
-class RFeatureExtractor(BaseEstimator, TransformerMixin):
+class RFeatureExtractor(TransformerMixin, BaseEstimator):
     """Extract features by calling an R package's function through ``rpy2``.
 
     Parameters
@@ -216,7 +225,8 @@ class RFeatureExtractor(BaseEstimator, TransformerMixin):
         self.verbose = verbose
         self.r_kwargs = r_kwargs
 
-    def fit(self, X: pd.DataFrame, y=None) -> "RFeatureExtractor":
+    def fit(self, X: pd.DataFrame, y=None) -> RFeatureExtractor:
+        """Do nothing: the extractor learns nothing from data. Returns ``self``."""
         self.fitted_ = True
         return self
 
@@ -231,6 +241,7 @@ class RFeatureExtractor(BaseEstimator, TransformerMixin):
             ) from exc
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Call the R feature function and return metadata plus features."""
         check_is_fitted(self, "fitted_")
         # resolve the R function first: it raises the actionable
         # "install rpy2 / install the R package" error, which a bare
@@ -272,6 +283,7 @@ class RFeatureExtractor(BaseEstimator, TransformerMixin):
         return out
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Names of the feature columns from the last ``transform`` call."""
         check_is_fitted(self, "feature_names_")
         return np.asarray(self.feature_names_, dtype=object)
 

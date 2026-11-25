@@ -31,7 +31,7 @@ def test_split_counts_match_r_reference():
     assert train_df["video_filename"].nunique() == 370
     assert test_df["video_filename"].nunique() == 94
 
-    pairing = dict(zip(df["video_filename"], df["corresponding_video"]))
+    pairing = dict(zip(df["video_filename"], df["corresponding_video"], strict=True))
     train_videos = set(train_df["video_filename"])
     test_videos = set(test_df["video_filename"])
     for video in train_videos:

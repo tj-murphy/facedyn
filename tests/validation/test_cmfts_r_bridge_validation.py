@@ -135,7 +135,7 @@ def test_feature_values_match_the_real_r_output(bridged, reference, well_conditi
         )
 
 
-@pytest.mark.parametrize("column,rtol", UNSTABLE.items())
+@pytest.mark.parametrize(("column", "rtol"), UNSTABLE.items())
 def test_numerically_unstable_features_stay_within_a_loose_tolerance(
     bridged, reference, well_conditioned, column, rtol
 ):

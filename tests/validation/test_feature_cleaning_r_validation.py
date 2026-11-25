@@ -35,6 +35,7 @@ stochastic comparison, out of scope here (see `PIPELINE.md` step 7).
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from facedyn.features.cleaning import FeatureCleaner, feature_diagnostics
 
@@ -103,7 +104,11 @@ def test_feature_cleaner_auto_drops_only_the_all_nan_column_by_default():
     df, feature_columns = _load_fixture()
 
     cleaner = FeatureCleaner(feature_columns=feature_columns, random_state=0)
-    out = cleaner.fit_transform(df)
+    with pytest.warns(UserWarning) as record:
+        out = cleaner.fit_transform(df)
+    messages = " ".join(str(w.message) for w in record)
+    assert "missing values" in messages
+    assert "near-zero-variance" in messages
 
     # Real R drops permutation_entropy for exactly this reason (all-NA,
     # unimputable) -- the default `max_nan_fraction=1.0` rule reproduces
@@ -141,7 +146,8 @@ def test_feature_cleaner_drops_exactly_the_real_zero_sd_columns():
     # zero-SD step from IterativeImputer's own stochasticity, and changes
     # nothing here since there's nothing left to impute anyway.
     cleaner = FeatureCleaner(feature_columns=feature_columns, impute=False, random_state=0)
-    out = cleaner.fit_transform(imputed)
+    with pytest.warns(UserWarning, match="near-zero-variance"):
+        out = cleaner.fit_transform(imputed)
 
     assert sorted(cleaner.zero_sd_columns_) == sorted(REAL_ZERO_SD_COLUMNS)
     assert set(out.columns) - {"video_filename", "isfakeorreal", "emotion", "valence"} == (

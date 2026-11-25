@@ -32,10 +32,19 @@ from facedyn.smoothing import RollingSmoother
 from facedyn.splitting import pair_groups, paired_train_test_split
 
 AU_COLUMNS = ["AU01_r", "AU06_r", "AU12_r", "AU17_r"]
+#: Per-video metadata to carry through `reshape_to_wide`. Named explicitly
+#: because the raw AU columns are still in the frame and vary within a video.
+ID_VARS = ["corresponding_video", "isfakeorreal"]
 N_FRAMES = 40
 
 #: 18 s: runs every stage of the pipeline twice. Skipped unless `pytest --runslow`; always run in CI.
-pytestmark = pytest.mark.slow
+#: The synthetic AU series are short noise, so NMF can stop at `max_iter`
+#: before converging. That is not what these tests check (they check that
+#: every stage is fitted on train only), so the warning is ignored here.
+pytestmark = [
+    pytest.mark.slow,
+    pytest.mark.filterwarnings("ignore::sklearn.exceptions.ConvergenceWarning"),
+]
 
 
 def make_frame_level_data(n_pairs: int = 32, seed: int = 0) -> pd.DataFrame:
@@ -68,7 +77,7 @@ def make_frame_level_data(n_pairs: int = 32, seed: int = 0) -> pd.DataFrame:
                     "corresponding_video": partner,
                     "isfakeorreal": label,
                     "frame": frame,
-                    **dict(zip(AU_COLUMNS, np.abs(values))),
+                    **dict(zip(AU_COLUMNS, np.abs(values), strict=True)),
                 })
     return pd.DataFrame(rows)
 
@@ -84,7 +93,9 @@ def features_for(
     """Apply already-fitted stages to a frame-level set. No fitting here."""
     normalised = normalizer.transform(frames)
     representative = au_selector.transform(normalised)
-    wide = reshape_to_wide(representative, value_cols=au_selector.selected_columns_)
+    wide = reshape_to_wide(
+        representative, value_cols=au_selector.selected_columns_, id_vars=ID_VARS
+    )
     extracted = extractor.transform(wide)
     cleaned = cleaner.transform(extracted)
     return pivot_features_wide(cleaned, feature_columns=list(cleaner.feature_names_out_))
@@ -109,10 +120,15 @@ def fitted_pipeline():
     extractor = TimeSeriesFeatureExtractor()
 
     train_wide = reshape_to_wide(
-        au_selector.transform(train_norm), value_cols=au_selector.selected_columns_
+        au_selector.transform(train_norm),
+        value_cols=au_selector.selected_columns_,
+        id_vars=ID_VARS,
     )
     train_extracted = extractor.fit_transform(train_wide)
-    cleaner = FeatureCleaner().fit(train_extracted)
+    # Every synthetic series has the same length, so `length` is constant
+    # and the cleaner drops it, saying so.
+    with pytest.warns(UserWarning, match="near-zero-variance"):
+        cleaner = FeatureCleaner().fit(train_extracted)
 
     stages = (normalizer, decomposer, au_selector, extractor, cleaner)
     train_features = features_for(train_frames, *stages)

@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.26"]
 build-backend = "hatchling.build"
 
 [project]
 name = "facedyn"
-version = "1.0.0"
+dynamic = ["version"]
 description = "Interpretable, leakage-aware classification of facial action unit time series."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -25,7 +25,6 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -52,9 +51,6 @@ Issues = "https://github.com/tj-murphy/facedyn/issues"
 Changelog = "https://github.com/tj-murphy/facedyn/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.4",
-]
 viz = [
     "matplotlib>=3.7",
 ]
@@ -67,8 +63,94 @@ r = [
     "rpy2>=3.5",
 ]
 
+# Development tools, not user-facing features, so they are dependency groups
+# (PEP 735) rather than extras: `pip install --group dev -e .` (pip >= 25.1)
+# or `uv sync`.
+[dependency-groups]
+test = [
+    "pytest>=7.4",
+]
+lint = [
+    "ruff>=0.9",
+    "mypy>=1.11",
+    "pre-commit>=3.5",
+]
+dev = [
+    { include-group = "test" },
+    { include-group = "lint" },
+]
+
+[tool.hatch.version]
+path = "src/facedyn/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/facedyn"]
 
 [tool.pytest.ini_options]
+minversion = "7.4"
 testpaths = ["tests"]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+xfail_strict = true
+log_level = "INFO"
+# Warnings are errors, so a new deprecation or an unexpected facedyn warning
+# fails the suite instead of scrolling past. Tests that expect a warning
+# assert it with `pytest.warns`. Add an `ignore` line below only for
+# third-party noise facedyn cannot act on, with the reason.
+filterwarnings = [
+    "error",
+    # joblib's loky backend forks from a multi-threaded process on Python
+    # 3.12+; harmless for these short-lived workers and not ours to fix.
+    "ignore:This process .* is multi-threaded, use of fork\\(\\) may lead to deadlocks:DeprecationWarning",
+    # rpy2 prints R console output through a warning on some platforms.
+    "ignore::UserWarning:rpy2.*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+show-fixes = true
+
+[tool.ruff.lint]
+extend-select = [
+    "B",    # flake8-bugbear: likely bugs
+    "C4",   # comprehensions
+    "D",    # docstrings (numpy convention, below)
+    "I",    # import sorting
+    "NPY",  # NumPy-specific
+    "PERF", # performance anti-patterns
+    "PGH",  # pygrep hooks (blanket noqa / type: ignore)
+    "PIE",  # misc lints
+    "PT",   # pytest style
+    "RUF",  # ruff-specific
+    "SIM",  # simplifications
+    "T20",  # stray print()
+    "UP",   # pyupgrade for the minimum Python version
+]
+ignore = [
+    "D105", # magic methods need no docstring
+    "D107", # __init__ is documented in the class docstring (numpy style)
+    "RUF001", "RUF002", "RUF003", # en/em dashes in prose are intentional
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.flake8-bugbear]
+# `range` is immutable, so it is a safe default argument.
+extend-immutable-calls = ["range"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "T20", "PERF401"]  # nested append loops read better when building fixtures
+"tools/**" = ["D", "T20"]
+
+[tool.mypy]
+files = ["src"]
+python_version = "3.10"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["pandas.*", "sklearn.*", "scipy.*", "joblib.*", "matplotlib.*", "rpy2.*", "threadpoolctl.*"]
+ignore_missing_imports = true

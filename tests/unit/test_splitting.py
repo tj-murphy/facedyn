@@ -59,7 +59,7 @@ def test_group_split_never_splits_a_videos_rows():
     test_videos = set(test_df["video_filename"])
     assert train_videos.isdisjoint(test_videos)
 
-    for video, group in df.groupby("video_filename"):
+    for _video, group in df.groupby("video_filename"):
         assert group.index.isin(train_df.index).all() or group.index.isin(test_df.index).all()
 
 
@@ -104,7 +104,7 @@ def test_pairs_never_split_across_train_and_test():
 
     train_videos = set(train_df["video_filename"])
     test_videos = set(test_df["video_filename"])
-    pairing = dict(zip(df["video_filename"], df["corresponding_video"]))
+    pairing = dict(zip(df["video_filename"], df["corresponding_video"], strict=True))
 
     for video in train_videos:
         assert pairing[video] in train_videos
@@ -292,7 +292,7 @@ def test_repeated_grouped_cv_is_deterministic_for_a_given_seed():
     folds_a = list(RepeatedStratifiedGroupKFold(random_state=0).split(df[["feature"]], y, groups))
     folds_b = list(RepeatedStratifiedGroupKFold(random_state=0).split(df[["feature"]], y, groups))
 
-    for (train_a, test_a), (train_b, test_b) in zip(folds_a, folds_b):
+    for (train_a, test_a), (train_b, test_b) in zip(folds_a, folds_b, strict=True):
         assert np.array_equal(train_a, train_b)
         assert np.array_equal(test_a, test_b)
 
@@ -466,7 +466,7 @@ def test_groups_from_column_aligns_with_pivot_features_wide():
     ).sample(frac=1, random_state=1)
 
     wide = pivot_features_wide(long, feature_columns=["mean"])
-    truth = dict(zip(per_video["video_filename"], per_video["participant"]))
+    truth = dict(zip(per_video["video_filename"], per_video["participant"], strict=True))
     expected = [truth[v] for v in wide["video_filename"]]
 
     # Directly from the wide table (participant carried through as id_var) ...

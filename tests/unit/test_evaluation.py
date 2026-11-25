@@ -488,14 +488,16 @@ def test_multiclass_metrics_match_sklearn(three_class_fit):
         assert m[f"precision_{cls}"] == pytest.approx(precisions[k])
         assert m[f"roc_auc_{cls}_ci_lower"] < m[f"roc_auc_{cls}"] < m[f"roc_auc_{cls}_ci_upper"]
     # Binary-only fields do not appear.
-    assert "mcnemar_p" not in m and "sensitivity" not in m
+    assert "mcnemar_p" not in m
+    assert "sensitivity" not in m
 
 
 def test_multiclass_metrics_without_scores_leave_auc_missing():
     y_true = np.array(["a", "b", "c", "a", "b", "c"])
     y_pred = np.array(["a", "b", "b", "a", "c", "c"])
     m = classification_metrics(y_true, y_pred)
-    assert np.isnan(m["roc_auc"]) and np.isnan(m["roc_auc_a"])
+    assert np.isnan(m["roc_auc"])
+    assert np.isnan(m["roc_auc_a"])
     assert m["accuracy"] == pytest.approx(4 / 6)
 
 
@@ -619,7 +621,7 @@ def test_pairwise_contrasts_honours_given_pairs_and_rejects_unknown_classes():
 
 def test_pairwise_contrasts_feed_binary_delong(three_class_fit):
     df, X, y = make_three_class()
-    for (a, b), subset in pairwise_contrasts(df, "emotion").items():
+    for (_a, b), subset in pairwise_contrasts(df, "emotion").items():
         Xs, ys = subset[["f0", "f1", "f2"]], subset["emotion"].to_numpy()
         model = make_classifier("random_forest", random_state=0, n_estimators=20).fit(Xs, ys)
         auc, lower, upper = roc_auc_delong_ci(

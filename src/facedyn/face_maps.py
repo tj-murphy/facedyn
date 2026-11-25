@@ -8,8 +8,9 @@ Adapted from `py-feat` v0.6.2 (MIT, github.com/cosanlab/py-feat), credit to
 its authors (Cheong, Xie, Byrne, Jolly & Chang). Two static artifacts are
 embedded below: the 68-point landmark template with its muscle polygons,
 and the fitted parameters of py-feat's ``pyfeat_aus_to_landmarks`` PLS
-regression mapping 20 AU values to deformed landmarks. See `PIPELINE.md`
-step 4 for why this is embedded rather than imported.
+regression mapping 20 AU values to deformed landmarks. They are embedded
+rather than imported so the face maps need only matplotlib, not py-feat
+and its dependencies.
 
 Some AUs have no facial region in this style. `py-feat`'s masseter and
 temporalis regions use its OpenFace-appropriate ``"_rel"`` variants (AU26),
@@ -35,6 +36,10 @@ from sklearn.utils.validation import check_is_fitted
 from facedyn._plot_utils import save_figure
 from facedyn.au_labels import extract_au_code
 from facedyn.nmf import NMFDecomposer, max_normalize_columns
+
+__all__ = [
+    "plot_nmf_face_maps",
+]
 
 # 68-point neutral face landmark template (iBUG/dlib scheme: 0-16 jaw,
 # 17-21/22-26 eyebrows, 27-35 nose, 36-41/42-47 eyes, 48-67 mouth).
@@ -246,28 +251,36 @@ _PLS_COEF, _PLS_INTERCEPT, _PLS_X_MEAN = _load_pls_model()
 
 
 def _predict_landmarks(au_vector: np.ndarray) -> tuple[list[float], list[float]]:
-    """68 deformed (x, y) landmark points for a 20-AU vector (in
-    `_FEAT_AU_ORDER`), replicating sklearn's `PLSRegression.predict`:
+    """Predict the 68 deformed (x, y) landmark points for a 20-AU vector.
+
+    The vector is in `_FEAT_AU_ORDER`. Replicates sklearn's `PLSRegression.predict`:
     `(au - x_mean) @ coef + intercept`, reshaped to (2, 68). Matches
-    py-feat's own `predict()` to float32 precision."""
+    py-feat's own `predict()` to float32 precision.
+    """
     flat = (au_vector - _PLS_X_MEAN) @ _PLS_COEF + _PLS_INTERCEPT
     x, y = flat.reshape(2, 68)
     return list(x), list(y)
 
 
 def _pt(x, y, x_idx: int, y_idx: int | None = None) -> tuple[float, float]:
-    """A landmark point, or a synthetic point mixing one landmark's x with
-    another's y (py-feat's originals do this for a few muscle vertices)."""
+    """Return a landmark point, or a synthetic one mixing two landmarks.
+
+    The synthetic point takes one landmark's x and another's y; py-feat's
+    originals do this for a few muscle vertices.
+    """
     if y_idx is None:
         y_idx = x_idx
     return (x[x_idx], y[y_idx])
 
 
 def _face_outline_paths(x, y) -> list[tuple[list[float], list[float]]]:
-    """(x, y) coordinate lists for the face's line-drawn features: jaw,
-    eyebrows, eyes, nose, lips. Adapted from py-feat's draw_lineface."""
+    """Build (x, y) coordinate lists for the face's line-drawn features.
+
+    The features are the jaw, eyebrows, eyes, nose and lips. Adapted from
+    py-feat's draw_lineface.
+    """
     index_groups = [
-        list(range(0, 17)),  # jaw
+        list(range(17)),  # jaw
         [17, 18, 19, 20, 21],  # left eyebrow
         [22, 23, 24, 25, 26],  # right eyebrow
         [36, 37, 38, 39, 40, 41, 36],  # left eye
@@ -281,8 +294,11 @@ def _face_outline_paths(x, y) -> list[tuple[list[float], list[float]]]:
 
 
 def _muscle_polygons(x, y) -> dict[str, list[tuple[float, float]]]:
-    """Facial-muscle-region polygons (vertex lists) for the given (deformed
-    or neutral) landmark arrays. Adapted from py-feat's draw_muscles."""
+    """Build facial-muscle-region polygons (vertex lists) from landmarks.
+
+    Works for deformed or neutral landmark arrays. Adapted from py-feat's
+    draw_muscles.
+    """
     pt = lambda i, j=None: _pt(x, y, i, j)  # noqa: E731
     bottom = (y[8] - y[57]) / 2
     eye_l_width = (y[21] - y[39]) / 2

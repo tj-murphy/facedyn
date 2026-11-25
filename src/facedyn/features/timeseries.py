@@ -29,6 +29,14 @@ from sklearn.utils.validation import check_is_fitted
 from facedyn.features._utils import is_constant as _is_constant
 from facedyn.features.reshape import apply_rowwise
 
+__all__ = [
+    "FEATURE_GROUPS",
+    "FEATURE_NAMES",
+    "TimeSeriesFeatureExtractor",
+    "extract_features",
+    "extract_timeseries_features",
+]
+
 FEATURE_NAMES: list[str] = [
     # distribution
     "mean", "sd", "min", "max", "range", "median", "iqr", "skewness", "kurtosis",
@@ -132,7 +140,7 @@ def _pacf(x: np.ndarray, lag_max: int) -> np.ndarray:
 
 
 def _dynamics(x: np.ndarray) -> dict[str, float]:
-    """Serial dependence and step-to-step volatility.
+    """Compute serial dependence and step-to-step volatility.
 
     ``acf10_sumsq`` and ``pacf5_sumsq`` sum squared coefficients over lags
     1 to 10 and 1 to 5. They summarise total dependence without regard to
@@ -441,7 +449,7 @@ def extract_timeseries_features(
     )
 
 
-class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
+class TimeSeriesFeatureExtractor(TransformerMixin, BaseEstimator):
     """scikit-learn transformer wrapping :func:`extract_timeseries_features`.
 
     Nothing is learned from the training set, since every feature is
@@ -477,11 +485,13 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         self.n_jobs = n_jobs
         self.verbose = verbose
 
-    def fit(self, X: pd.DataFrame, y=None) -> "TimeSeriesFeatureExtractor":
+    def fit(self, X: pd.DataFrame, y=None) -> TimeSeriesFeatureExtractor:
+        """Record the feature names; nothing is learned from data. Returns ``self``."""
         self.feature_names_ = list(FEATURE_NAMES)
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Extract the time-series features for every row (one series per row)."""
         check_is_fitted(self, "feature_names_")
         return extract_timeseries_features(
             X,
@@ -492,5 +502,6 @@ class TimeSeriesFeatureExtractor(BaseEstimator, TransformerMixin):
         )
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Names of the extracted feature columns."""
         check_is_fitted(self, "feature_names_")
         return np.asarray(self.feature_names_, dtype=object)

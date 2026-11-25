@@ -10,8 +10,13 @@ from sklearn.base import BaseEstimator, TransformerMixin
 
 from facedyn._plot_utils import save_figure
 
+__all__ = [
+    "RollingSmoother",
+    "plot_smoothing_comparison",
+]
 
-class RollingSmoother(BaseEstimator, TransformerMixin):
+
+class RollingSmoother(TransformerMixin, BaseEstimator):
     """Left-aligned rolling mean, edge-extended, applied within each video.
 
     Edge frames that fall short of a full window carry the nearest valid
@@ -50,11 +55,13 @@ class RollingSmoother(BaseEstimator, TransformerMixin):
         self.column_pattern = column_pattern
         self.prefix = prefix
 
-    def fit(self, X: pd.DataFrame, y=None) -> "RollingSmoother":
+    def fit(self, X: pd.DataFrame, y=None) -> RollingSmoother:
+        """Record which columns to smooth; nothing is learned from data."""
         self.columns_ = self._resolve_columns(X)
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Add a smoothed copy of each selected column, smoothing within each video."""
         columns = getattr(self, "columns_", None) or self._resolve_columns(X)
         grouped = X.groupby(self.group_col)
         result = X.copy()

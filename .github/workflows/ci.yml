@@ -4,15 +4,43 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new push to the same branch or PR cancels the run it replaces.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint (pre-commit + mypy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Ruff lint, ruff format and file hygiene
+        uses: pre-commit/action@v3.0.1
+
+      - name: Install facedyn with the lint tools
+        run: |
+          python -m pip install --upgrade pip  # dependency groups need pip >= 25.1
+          pip install --group lint -e .
+
+      - name: Type-check
+        run: mypy
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
@@ -20,16 +48,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
           cache: pip
 
-      - name: Install facedyn (dev + viz extras)
-        run: pip install -e ".[dev,viz]"
+      - name: Install facedyn (test group + viz extra)
+        run: |
+          python -m pip install --upgrade pip  # dependency groups need pip >= 25.1
+          pip install --group test -e ".[viz]"
 
       - name: Run tests
         # --runslow is required: `pytest` alone skips the expensive tests
         # (Boruta fits, imputation, rpy2) so the local edit loop stays in
         # seconds. CI is where they have to run.
-        run: pytest -v --runslow
+        run: pytest --runslow
 
   core-import:
     name: Core import (no optional extras)
@@ -47,23 +78,41 @@ jobs:
         run: pip install -e .
 
       - name: Import every submodule without matplotlib or rpy2 installed
+        # Walks the package, so a new module is checked without editing this.
         run: |
           python -c "
-          import facedyn
-          import facedyn.au_labels
-          import facedyn.classifiers
-          import facedyn.evaluation
-          import facedyn.feature_selection
-          import facedyn.features
-          import facedyn.features.cleaning
-          import facedyn.features.external
-          import facedyn.features.reshape
-          import facedyn.features.timeseries
-          import facedyn.nmf
-          import facedyn.normalisation
-          import facedyn.representative_aus
-          import facedyn.smoothing
-          import facedyn.splitting
-          import facedyn.tuning
-          print('facedyn core imports cleanly with no optional dependencies')
+          import importlib, pkgutil, facedyn
+          names = [m.name for m in pkgutil.walk_packages(facedyn.__path__, 'facedyn.')]
+          for name in names:
+              importlib.import_module(name)
+          print(f'facedyn {facedyn.__version__}: {len(names)} modules import with no optional dependencies')
           "
+
+  build:
+    name: Build and check the distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist and wheel
+        run: pipx run build
+
+      - name: Check metadata renders on PyPI
+        run: pipx run twine check --strict dist/*
+
+  # The one check to mark as required in branch protection: it fails if any
+  # job above failed or was cancelled, so adding a job never needs a
+  # settings change.
+  pass:
+    name: All checks passed
+    if: always()
+    needs: [lint, test, core-import, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

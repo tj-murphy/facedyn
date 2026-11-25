@@ -6,8 +6,8 @@ import pytest
 from facedyn.au_labels import AU_DESCRIPTIONS
 from facedyn.face_maps import (
     _FEAT_AU_ORDER,
-    _NEUTRAL_LANDMARKS,
     _MUSCLE_TO_AU,
+    _NEUTRAL_LANDMARKS,
     _face_outline_paths,
     _muscle_polygons,
     _predict_landmarks,
@@ -33,7 +33,8 @@ def test_muscle_polygons_are_well_formed():
     for name, vertices in polygons.items():
         assert len(vertices) >= 3, name
         for x, y in vertices:
-            assert np.isfinite(x) and np.isfinite(y), name
+            assert np.isfinite(x), name
+            assert np.isfinite(y), name
 
 
 def test_face_outline_paths_are_non_empty():
@@ -60,8 +61,8 @@ def test_predict_landmarks_at_zero_roughly_matches_neutral_template():
     but close enough to confirm the embedded coef/intercept/x_mean weren't
     corrupted or misaligned during extraction from py-feat's model file."""
     x, y = _predict_landmarks(np.zeros(len(_FEAT_AU_ORDER)))
-    assert max(abs(a - b) for a, b in zip(x, _NEUTRAL_X)) < 5
-    assert max(abs(a - b) for a, b in zip(y, _NEUTRAL_Y)) < 5
+    assert max(abs(a - b) for a, b in zip(x, _NEUTRAL_X, strict=True)) < 5
+    assert max(abs(a - b) for a, b in zip(y, _NEUTRAL_Y, strict=True)) < 5
 
 
 def test_predict_landmarks_returns_68_points():
@@ -101,6 +102,7 @@ def test_plot_nmf_face_maps_rejects_wrong_number_of_axes():
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     from facedyn.face_maps import plot_nmf_face_maps
 
     columns = [f"smth_{au}_r" for au in ["AU01", "AU06"]]
@@ -127,6 +129,7 @@ def test_plot_nmf_face_maps_does_not_warn_when_all_aus_are_mapped():
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import warnings
+
     from facedyn.face_maps import plot_nmf_face_maps
 
     columns = [f"smth_{au}_r" for au in ["AU01", "AU06", "AU12"]]
@@ -148,6 +151,7 @@ def test_face_map_shades_the_region_matching_the_dominant_au(monkeypatch):
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     import facedyn.face_maps as face_maps
 
     monkeypatch.setattr(
@@ -210,6 +214,7 @@ def test_orb_oc_l_region_shaded_by_au07(monkeypatch):
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+
     import facedyn.face_maps as face_maps
 
     monkeypatch.setattr(

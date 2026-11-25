@@ -8,8 +8,12 @@ import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
+__all__ = [
+    "ZScoreShiftNormalizer",
+]
 
-class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
+
+class ZScoreShiftNormalizer(TransformerMixin, BaseEstimator):
     """Z-score columns using train-set mean and SD, then shift to non-negative.
 
     Two behaviours are easy to misread. Mean and SD are pooled across all
@@ -20,7 +24,9 @@ class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
     Only mean and SD are frozen from `fit`.
 
     Both replicate the original R code rather than the deepfake study's
-    prose, which describes this step imprecisely. See `PIPELINE.md` step 3.
+    prose, which describes this step imprecisely. The regression tests in
+    ``tests/validation/test_normalisation_validation.py`` check this
+    against the R output.
 
     Parameters
     ----------
@@ -41,7 +47,8 @@ class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
         self.columns = columns
         self.column_pattern = column_pattern
 
-    def fit(self, X: pd.DataFrame, y=None) -> "ZScoreShiftNormalizer":
+    def fit(self, X: pd.DataFrame, y=None) -> ZScoreShiftNormalizer:
+        """Learn the pooled mean and SD of each selected column."""
         self.columns_ = self._resolve_columns(X)
         self.means_ = X[self.columns_].mean()
         sds = X[self.columns_].std()  # ddof=1, matches R's sd()
@@ -49,6 +56,7 @@ class ZScoreShiftNormalizer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Z-score with the fitted mean and SD, then shift each column to start at 0."""
         check_is_fitted(self, "means_")
         result = X.copy()
         for col in self.columns_:

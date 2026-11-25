@@ -76,7 +76,7 @@ def test_rank_sweep_returns_one_row_per_rank():
 def test_rank_sweep_mse_drops_sharply_near_true_rank():
     df = make_low_rank_df(rank=3)
     result = nmf_rank_mse_sweep(df, ranks=range(2, 6), random_state=0)
-    mse_by_rank = dict(zip(result["rank"], result["mse"]))
+    mse_by_rank = dict(zip(result["rank"], result["mse"], strict=True))
 
     # Should improve markedly approaching the true rank, then flatten out.
     assert mse_by_rank[3] < mse_by_rank[2]
@@ -405,7 +405,7 @@ def test_cophenetic_correlation_n_jobs_matches_serial_exactly():
 def test_cophenetic_correlation_high_at_true_block_count_lower_when_overspecified():
     df = make_blocky_df(n_per_block=30, n_blocks=3, n_features=9, noise=0.01, seed=2)
     result = nmf_cophenetic_correlation(df, ranks=[3, 9], n_runs=8, random_state=0)
-    by_rank = dict(zip(result["rank"], result["cophenetic_correlation"]))
+    by_rank = dict(zip(result["rank"], result["cophenetic_correlation"], strict=True))
 
     # At the true number of well-separated blocks, row-cluster assignment
     # should be highly stable across random restarts.

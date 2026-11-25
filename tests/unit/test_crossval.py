@@ -13,7 +13,8 @@ cleaner uses a SimpleImputer and the model a logistic regression, so the
 whole file runs in well under a minute.
 """
 
-import warnings
+
+from typing import ClassVar
 
 import numpy as np
 import pandas as pd
@@ -76,13 +77,13 @@ def make_frames(n_participants=12, videos_per_participant=4, classes=("a", "b"),
 
 def fast_kwargs(**overrides):
     """Cheap steps for tests: no iterative imputation, a linear model."""
-    kwargs = dict(
-        cleaner=FeatureCleaner(impute=SimpleImputer()),
-        selector=False,
-        model=make_classifier("logistic_regression"),
-        cv=RepeatedStratifiedGroupKFold(n_splits=4, n_repeats=2, random_state=0),
-        random_state=0,
-    )
+    kwargs = {
+        "cleaner": FeatureCleaner(impute=SimpleImputer()),
+        "selector": False,
+        "model": make_classifier("logistic_regression"),
+        "cv": RepeatedStratifiedGroupKFold(n_splits=4, n_repeats=2, random_state=0),
+        "random_state": 0,
+    }
     kwargs.update(overrides)
     return kwargs
 
@@ -163,7 +164,7 @@ def test_oof_metrics_do_not_depend_on_positive_label(binary_result):
 class _Spy:
     """Records the videos each step's `fit` was given, in call order."""
 
-    calls: dict = {}
+    calls: ClassVar[dict] = {}
 
     @classmethod
     def record(cls, step, videos):
@@ -309,7 +310,7 @@ def test_matches_a_manual_loop_without_selection(frames):
         X_train, X_test = (
             pivot_features_wide(cleaner.transform(t), feature_columns=list(cleaner.feature_names_out_),
                                 id_vars=[]).set_index("video_filename").reindex(videos[idx])
-            for t, idx in zip(tables, (train_idx, test_idx))
+            for t, idx in zip(tables, (train_idx, test_idx), strict=True)
         )
         model = make_classifier("logistic_regression").fit(X_train, per_video["label"].iloc[train_idx])
         expected.append(pd.Series(model.predict_proba(X_test)[:, 1], index=X_test.index))
@@ -431,7 +432,8 @@ def test_keep_bases_and_keep_models(binary_result):
 
 def test_bases_and_models_are_not_kept_by_default(frames):
     result = cross_validate_pipeline(frames, "label", "participant", **fast_kwargs())
-    assert result.nmf_bases == {} and result.fold_models == {}
+    assert result.nmf_bases == {}
+    assert result.fold_models == {}
 
 
 def test_empty_selection_warns_and_predicts_class_frequencies(frames):

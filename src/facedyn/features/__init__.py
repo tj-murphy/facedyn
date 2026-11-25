@@ -31,18 +31,18 @@ from facedyn.features.timeseries import (
 )
 
 __all__ = [
-    "reshape_to_wide",
-    "pivot_features_wide",
-    "apply_rowwise",
+    "FEATURE_GROUPS",
+    "FEATURE_NAMES",
+    "CallableFeatureExtractor",
+    "FeatureCleaner",
+    "RFeatureExtractor",
     "TimeSeriesFeatureExtractor",
+    "apply_rowwise",
+    "cmfts_r_features",
     "extract_features",
     "extract_timeseries_features",
-    "FEATURE_NAMES",
-    "FEATURE_GROUPS",
-    "RFeatureExtractor",
-    "CallableFeatureExtractor",
-    "cmfts_r_features",
     "feature_diagnostics",
+    "pivot_features_wide",
     "plot_feature_diagnostics",
-    "FeatureCleaner",
+    "reshape_to_wide",
 ]

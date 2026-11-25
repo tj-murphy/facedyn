@@ -241,7 +241,7 @@ def test_sweep_feature_sets_are_nested_and_shrink(swept):
     _, sweep, _ = swept
     counts = sweep["n_features"].to_numpy()
     assert (np.diff(counts) <= 0).all()
-    for tighter, looser in zip(sweep["features"][1:], sweep["features"][:-1]):
+    for tighter, looser in zip(sweep["features"][1:], sweep["features"][:-1], strict=True):
         assert set(tighter) <= set(looser)
 
 
@@ -379,7 +379,7 @@ def test_tuning_without_refit_has_no_selector():
     )
     assert result.selector_ is None
     with pytest.raises(AttributeError, match="refitted selector"):
-        result.selected_columns_
+        result.selected_columns_  # noqa: B018 -- the attribute access is what raises
 
 
 def test_a_single_split_falls_back_to_the_delong_standard_error():

@@ -83,7 +83,7 @@ def _assert_matched_components(py_matrix: np.ndarray, r_matrix: np.ndarray, resi
     matched_corrs = corr[py_idx, r_idx]
     assert (matched_corrs > 0.999).all(), matched_corrs
 
-    for py_i, r_i in zip(py_idx, r_idx):
+    for py_i, r_i in zip(py_idx, r_idx, strict=True):
         py_col = py_matrix[:, py_i]
         r_col = r_matrix[:, r_i]
         slope = np.dot(py_col, r_col) / np.dot(py_col, py_col)

@@ -34,6 +34,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `ale_grid(values, grid_size)`: the interval edges used.
 - `humanise_feature_label("kurtosis_smth_AU12_r")` gives `"AU12 - Lip Corner Puller — kurtosis"`.
 
+- `facedyn.__version__`. The version is now defined once, in `src/facedyn/__init__.py`, and read from there by the build.
+- Every public module defines `__all__`.
+- README section "Input data" describing the expected frame-level shape. Docstrings point to it.
+- `CONTRIBUTING.md`: setup, checks, coding conventions and the release steps.
+- Development tooling, following the Scientific Python Development Guide:
+  - ruff (lint and format) and mypy, configured in `pyproject.toml` and run through pre-commit (`.pre-commit-config.yaml`).
+  - Development dependencies are now dependency groups (`test`, `lint`, `dev`): `pip install --group dev -e .`. The `dev` extra is removed.
+  - Stricter pytest configuration: `--strict-markers`, `--strict-config`, `xfail_strict`, and warnings raised as errors.
+  - CI: a lint and type-check job, a build-and-`twine check` job, Python 3.14 in the test matrix, cancellation of superseded runs, an automatic import check over every submodule, and one "All checks passed" job to require. Dependabot keeps the action versions current.
+
 ### Changed
 
 - `classification_metrics` and `evaluate_models` now raise if `positive_label` is given with more than two classes. Previously they quietly computed one-vs-rest binary statistics. Use the per-class columns or `pairwise_contrasts` instead.
@@ -49,6 +59,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   - `cross_validate_grouped`'s missing-`groups` warning is generic: it says splitting repeated measures or matched pairs can inflate or deflate a score. The `positive_label` and `tune_selection_threshold` errors no longer cite one study's choices.
   - `paired_train_test_split`'s broken-pairing error says "source video" instead of "real video".
   - No change to the API, defaults or behaviour. `make_classifier`'s default `preset="paper1"` stays as it is, so existing code still reproduces the published numbers.
+
+### Fixed
+
+- Every transformer listed `BaseEstimator` before `TransformerMixin`. On scikit-learn 1.6 or later that made them report that they were not transformers (`__sklearn_tags__().transformer_tags` was `None`). They now list the mixin first, as scikit-learn requires.
+- Lists that must be the same length are zipped with `strict=True`, so a mismatch raises instead of silently dropping items.
+- Docstrings no longer refer to development notes that are not in the repository.
 
 ## [1.0.0]
 

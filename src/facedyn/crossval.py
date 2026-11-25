@@ -52,6 +52,11 @@ from facedyn.representative_aus import RepresentativeAUSelector
 from facedyn.smoothing import RollingSmoother
 from facedyn.splitting import RepeatedStratifiedGroupKFold, _video_to_group
 
+__all__ = [
+    "CVPipelineResult",
+    "cross_validate_pipeline",
+]
+
 _SERIES_COL = "series"
 
 
@@ -103,10 +108,12 @@ class CVPipelineResult:
 
     @property
     def n_repeats(self) -> int:
+        """Number of CV repeats in the result."""
         return int(self.oof["repeat"].nunique())
 
     @property
     def n_folds(self) -> int:
+        """Total number of folds, summed over repeats."""
         return len(self.scores)
 
     def summary(self) -> pd.DataFrame:
@@ -234,7 +241,7 @@ def cross_validate_pipeline(
     video_col: str = "video_filename",
     frame_col: str = "frame",
 ) -> CVPipelineResult:
-    """Grouped cross-validation with every fitted step refitted per fold.
+    """Cross-validate by group, refitting every fitted step inside each fold.
 
     Use this, not :func:`facedyn.evaluation.cross_validate_grouped`, when
     starting from frame-level AU data: every step that learns from data is
@@ -249,7 +256,7 @@ def cross_validate_pipeline(
     Parameters
     ----------
     frames : pd.DataFrame
-        Frame-level data, one row per frame (see ``DATA_FORMAT.md``), with
+        Frame-level data, one row per frame (see "Input data" in the README), with
         ``video_col``, ``frame_col`` and the raw AU columns.
     labels : str or pd.Series
         The class of each video: a column of ``frames`` (constant within
@@ -358,15 +365,15 @@ def cross_validate_pipeline(
     splits = list(cv.split(np.zeros(len(videos)), y, group_ids))
     fold_ids = _repeat_and_fold(splits, len(videos))
 
-    config = dict(
-        representative_aus=representative_aus,
-        series_columns=series_columns,
-        classes=classes,
-        keep_bases=keep_bases,
-        keep_models=keep_models,
-        video_col=video_col,
-        frame_col=frame_col,
-    )
+    config = {
+        "representative_aus": representative_aus,
+        "series_columns": series_columns,
+        "classes": classes,
+        "keep_bases": keep_bases,
+        "keep_models": keep_models,
+        "video_col": video_col,
+        "frame_col": frame_col,
+    }
     outputs = Parallel(n_jobs=n_jobs)(
         delayed(_run_fold)(
             frames, videos, y, train_idx, test_idx, steps, config
@@ -374,7 +381,7 @@ def cross_validate_pipeline(
         for train_idx, test_idx in splits
     )
 
-    empty = [ids for ids, out in zip(fold_ids, outputs) if not out["features"]["selected"].any()]
+    empty = [ids for ids, out in zip(fold_ids, outputs, strict=True) if not out["features"]["selected"].any()]
     if empty:
         warnings.warn(
             f"The selector kept no features in {len(empty)} of {len(splits)} folds "
@@ -387,7 +394,7 @@ def cross_validate_pipeline(
 
     oof_parts, score_rows, au_parts, feature_parts = [], [], [], []
     nmf_bases, fold_models = {}, {}
-    for (repeat, fold), (_, test_idx), out in zip(fold_ids, splits, outputs):
+    for (repeat, fold), (_, test_idx), out in zip(fold_ids, splits, outputs, strict=True):
         test_videos = videos[test_idx]
         oof = pd.DataFrame({
             "video": test_videos,
@@ -488,7 +495,7 @@ def _resolve_steps(smoother, normalizer, decomposer, feature_extractor, cleaner,
 
 
 def _repeat_and_fold(splits, n_videos) -> list[tuple[int, int]]:
-    """Number each split by repeat and fold within repeat.
+    """Label each split with its repeat and its fold within that repeat.
 
     A new repeat starts when a test fold contains a video already tested
     in the current repeat, which holds for any repeated k-fold splitter.

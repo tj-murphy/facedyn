@@ -48,11 +48,27 @@ pip install facedyn[viz]     # + matplotlib, for the plot_* functions
 Every transformer follows the scikit-learn `fit`/`transform` contract, so
 you can swap any stage for your own.
 
+## Input data
+
+facedyn reads long-format, frame-level data: one row per video frame.
+
+| Column | Default name | Notes |
+|---|---|---|
+| Video id | `video_filename` | Groups the frames of one video. Every function that needs it takes `video_col`. |
+| Frame number | `frame` | Orders frames within a video (`frame_col`). |
+| AU intensities | any column ending `_r` (e.g. `AU01_r`) | OpenFace's naming. Override with `column_pattern=` or `columns=[...]`. |
+| Label | any name | Constant within a video. Binary or multiclass. |
+| Group | any name | The unit of independence, e.g. `participant`. Constant within a video. |
+
+| video_filename | frame | participant | emotion | AU01_r | AU06_r | AU12_r |
+|---|---|---|---|---|---|---|
+| p01_happy_1 | 1 | p01 | happy | 0.4 | 0.1 | 0.0 |
+| p01_happy_1 | 2 | p01 | happy | 0.5 | 0.2 | 0.1 |
+| p02_sad_1 | 1 | p02 | sad | 0.0 | 0.3 | 0.6 |
+
 ## Quickstart
 
-`frames` has one row per video frame: a `video_filename` column, a `frame`
-column, OpenFace AU intensity columns (`AU01_r`, `AU02_r`, ...), plus the
-label and the participant id (any column names; pass them as arguments).
+`frames` is a table in the shape above.
 
 ```python
 from facedyn import (
@@ -97,22 +113,14 @@ for later versions.
 ## Development
 
 ```bash
-pip install -e ".[dev,viz]"
-pytest              # fast tests, ~15 s
-pytest --runslow    # everything, including Boruta and R validation, ~5 min
+python -m pip install -U pip           # dependency groups need pip >= 25.1
+pip install --group dev -e ".[viz]"   # tests, ruff, mypy, pre-commit
+pre-commit install                    # lint and format on every commit
+pytest                                # fast tests, ~15 s
+pytest --runslow                      # everything, including Boruta and R validation
 ```
 
-`pytest` skips tests marked `slow` (Boruta fits, `missForest`-equivalent
-imputation, the rpy2 bridge) so the edit loop stays in seconds. CI runs
-`--runslow`, so nothing is exempt from gating a push. The suite leaves two
-cores free on machines with more than four, since several tests ask for
-`n_jobs=-1`; add `nice -n 19` for a full run you want to forget about.
-
-The R-bridge tests need rpy2 and a working R install, and skip otherwise:
-
-```bash
-pip install -e ".[dev,r]"     # on R 4.4 or older, pin: pip install 'rpy2<3.6'
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 
 ## Credits
 

@@ -47,5 +47,5 @@ def test_matches_final_analysis_nmf_check_rmds_real_selection():
         "nmf2": "AU17_chin_raiser",
         "nmf3": "AU01_inner_brow_raiser",
     }
-    actual = dict(zip(result["component"], result["au"]))
+    actual = dict(zip(result["component"], result["au"], strict=True))
     assert actual == expected

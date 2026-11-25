@@ -7,8 +7,7 @@ matrix and keeps that AU's raw time series as the component's
 representative feature.
 
 The original R analysis hardcoded the chosen AUs by eye from the
-basis-matrix heatmap. This replaces that step with a tested argmax. See
-`PIPELINE.md` step 5.
+basis-matrix heatmap. This replaces that step with a tested argmax.
 """
 
 from __future__ import annotations
@@ -20,6 +19,11 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.utils.validation import check_is_fitted
 
 from facedyn.nmf import NMFDecomposer
+
+__all__ = [
+    "RepresentativeAUSelector",
+    "select_representative_aus",
+]
 
 
 def select_representative_aus(
@@ -69,7 +73,7 @@ def select_representative_aus(
     return pd.DataFrame(result)
 
 
-class RepresentativeAUSelector(BaseEstimator, TransformerMixin):
+class RepresentativeAUSelector(TransformerMixin, BaseEstimator):
     """Replace NMF activation columns with each component's representative raw AU.
 
     Takes an already-fitted decomposer rather than fitting its own, so the
@@ -94,12 +98,14 @@ class RepresentativeAUSelector(BaseEstimator, TransformerMixin):
     def __init__(self, decomposer: NMFDecomposer):
         self.decomposer = decomposer
 
-    def fit(self, X: pd.DataFrame, y=None) -> "RepresentativeAUSelector":
+    def fit(self, X: pd.DataFrame, y=None) -> RepresentativeAUSelector:
+        """Select one representative AU per component from ``decomposer``."""
         self.selection_ = select_representative_aus(self.decomposer)
         self.selected_columns_ = list(self.selection_["au"])
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Keep the metadata columns and the representative AU columns."""
         check_is_fitted(self, "selected_columns_")
         metadata = X.drop(columns=self.decomposer.columns_).reset_index(drop=True)
         representative = X[self.selected_columns_].reset_index(drop=True)

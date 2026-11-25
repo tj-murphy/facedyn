@@ -136,7 +136,7 @@ def main() -> None:
         "held_out": {},
     }
 
-    print("\n--- held-out test set (n=%d), confirmation only ---" % len(test))
+    print(f"\n--- held-out test set (n={len(test)}), confirmation only ---")
     fitted = make_classifier("random_forest", random_state=args.seed)
     fitted.fit(train[chosen], y_train)
     scores = fitted.predict_proba(test[chosen])[:, list(fitted.classes_).index(POSITIVE)]

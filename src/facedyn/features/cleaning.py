@@ -34,6 +34,12 @@ from sklearn.utils.validation import check_is_fitted
 from facedyn._plot_utils import save_figure
 from facedyn.features._utils import is_constant
 
+__all__ = [
+    "FeatureCleaner",
+    "feature_diagnostics",
+    "plot_feature_diagnostics",
+]
+
 
 def _resolve_feature_columns(X: pd.DataFrame, feature_columns: list[str] | None) -> list[str]:
     if feature_columns is not None:
@@ -157,7 +163,7 @@ def plot_feature_diagnostics(
     return ax
 
 
-class FeatureCleaner(BaseEstimator, TransformerMixin):
+class FeatureCleaner(TransformerMixin, BaseEstimator):
     """Optional, opt-in cleanup of feature-extractor output.
 
     Generic over which extractor produced the features, since it only
@@ -263,7 +269,13 @@ class FeatureCleaner(BaseEstimator, TransformerMixin):
         self.drop_zero_sd = drop_zero_sd
         self.random_state = random_state
 
-    def fit(self, X: pd.DataFrame, y=None) -> "FeatureCleaner":
+    def fit(self, X: pd.DataFrame, y=None) -> FeatureCleaner:
+        """Learn which columns to drop and fit the imputer on ``X``.
+
+        Converts Inf to NaN, drops columns at or above ``max_nan_fraction``
+        missing (plus ``drop_columns``), imputes, then drops near-zero-variance
+        columns. Warns listing every column it drops.
+        """
         self.feature_columns_ = _resolve_feature_columns(X, self.feature_columns)
         self.diagnostics_ = feature_diagnostics(X, self.feature_columns_)
 
@@ -312,6 +324,7 @@ class FeatureCleaner(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Apply the fitted drops and imputation, keeping metadata columns."""
         check_is_fitted(self, "feature_names_out_")
         metadata = X.drop(columns=self.feature_columns_).reset_index(drop=True)
 
@@ -329,6 +342,7 @@ class FeatureCleaner(BaseEstimator, TransformerMixin):
         return pd.concat([metadata, cleaned], axis=1)
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Names of the feature columns kept after cleaning."""
         check_is_fitted(self, "feature_names_out_")
         return np.asarray(self.feature_names_out_, dtype=object)
 

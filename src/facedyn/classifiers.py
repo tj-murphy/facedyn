@@ -1,4 +1,4 @@
-"""Classifiers for the video-level decision (`PIPELINE.md` step 9).
+"""Classifiers for the video-level decision.
 
 Binary or multiclass: every model here accepts any number of classes.
 
@@ -34,6 +34,16 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+
+__all__ = [
+    "CLASSIFIER_LABELS",
+    "CLASSIFIER_NAMES",
+    "PAPER1_PARAMS",
+    "PAPER1_PARAM_GRIDS",
+    "fit_classifiers",
+    "make_classifier",
+    "make_classifiers",
+]
 
 CLASSIFIER_NAMES = (
     "random_forest",
@@ -133,8 +143,8 @@ def make_classifier(
 
         ``"c50_substitute"`` **is a substitution, not a port.** C5.0 has no
         Python implementation, and bridging to R's would make R a runtime
-        dependency, which this package deliberately avoids (`PIPELINE.md`
-        rpy2 policy). C5.0's boosting is adaptive reweighting of decision
+        dependency, which this package deliberately avoids (rpy2 is only
+        ever an optional extra). C5.0's boosting is adaptive reweighting of decision
         trees, so :class:`~sklearn.ensemble.AdaBoostClassifier` is the
         closest same-family stand-in, and R's ``trials = 20`` maps directly
         onto ``n_estimators=20``.

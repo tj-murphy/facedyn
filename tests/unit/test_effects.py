@@ -208,7 +208,7 @@ def test_nan_in_feature_is_skipped():
 # Feature labels
 # --------------------------------------------------------------------------
 
-@pytest.mark.parametrize("column, expected", [
+@pytest.mark.parametrize(("column", "expected"), [
     ("kurtosis_smth_AU12_r", "AU12 - Lip Corner Puller — kurtosis"),
     ("acf10_sumsq_AU06_r", "AU06 - Cheek Raiser — acf10_sumsq"),
     ("acf1_AU06_r", "AU06 - Cheek Raiser — acf1"),
@@ -273,7 +273,7 @@ def test_cv_matches_single_model_on_the_shared_grid(cv_result):
 
 def test_cv_skips_folds_that_did_not_use_the_feature(cv_result):
     feature = _a_feature(cv_result)
-    trimmed = type(cv_result)(**{**cv_result.__dict__})
+    trimmed = type(cv_result)(**cv_result.__dict__)
     key = next(iter(cv_result.fold_models))
     info = cv_result.fold_models[key]
     kept = [f for f in info["features"] if f != feature]
@@ -344,7 +344,7 @@ def test_plot_single_model(plt, linear_data, tmp_path):
         plot_feature_effect(model, X)
 
 
-@pytest.mark.parametrize("band, show_folds", [("sd", False), ("range", True), (None, False)])
+@pytest.mark.parametrize(("band", "show_folds"), [("sd", False), ("range", True), (None, False)])
 def test_plot_cv_result(plt, cv_result, band, show_folds):
     fig = plot_feature_effect(cv_result, band=band, show_folds=show_folds, grid_size=8)
     axes = [ax for ax in fig.axes if ax.get_visible()]

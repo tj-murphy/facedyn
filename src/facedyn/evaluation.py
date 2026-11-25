@@ -42,6 +42,23 @@ from facedyn._plot_utils import save_figure
 from facedyn.classifiers import CLASSIFIER_LABELS
 from facedyn.splitting import RepeatedStratifiedGroupKFold
 
+__all__ = [
+    "MODEL_COLOURS",
+    "classification_metrics",
+    "confusion_matrix_frame",
+    "cross_validate_grouped",
+    "delong_roc_test",
+    "evaluate_models",
+    "pairwise_contrasts",
+    "plot_accuracy_comparison",
+    "plot_confusion_matrix",
+    "plot_decision_boundary",
+    "plot_probability_distributions",
+    "plot_roc_curves",
+    "plot_roc_ovr",
+    "roc_auc_delong_ci",
+]
+
 # Okabe-Ito colour-blind-safe palette, keyed by classifier name.
 MODEL_COLOURS = {
     "random_forest": "#E69F00",
@@ -481,7 +498,7 @@ def classification_metrics(
 
 
 def _class_list(y_true, y_pred, labels) -> list:
-    """The classes, in ``labels`` order or sorted as scikit-learn sorts them."""
+    """Return the classes, in ``labels`` order or sorted as scikit-learn sorts them."""
     if labels is not None:
         classes = list(labels)
         unknown = (set(y_true.tolist()) | set(y_pred.tolist())) - set(classes)

@@ -1,5 +1,6 @@
-"""Choosing :class:`~facedyn.feature_selection.BorutaSelector`'s
-``selection_threshold`` from data held out of training.
+"""Choose ``BorutaSelector.selection_threshold`` from data held out of training.
+
+Tunes :class:`~facedyn.feature_selection.BorutaSelector`'s threshold.
 
 ``selection_threshold`` is the most consequential setting in the package
 and, until this module, the one with the least backing. Every number
@@ -15,7 +16,7 @@ lower still (``0.05``), because the selector inside the loop sees 296
 videos where the final fit sees 370 and therefore confirms fewer features
 at any given threshold. **A threshold tuned on inner splits is biased low
 when transplanted into the full fit**, by roughly the amount that
-shrinkage costs. See ``PIPELINE.md`` "Step 8b".
+shrinkage costs.
 
 This module picks the threshold the way it should be picked: on a
 validation fold carved out of the **training** set.
@@ -69,10 +70,10 @@ from facedyn.splitting import RepeatedStratifiedGroupKFold
 
 __all__ = [
     "ThresholdTuningResult",
+    "plot_threshold_sweep",
     "threshold_grid",
     "threshold_sweep",
     "tune_selection_threshold",
-    "plot_threshold_sweep",
 ]
 
 
@@ -108,7 +109,7 @@ def threshold_grid(n_boruta_repeats: int) -> np.ndarray:
 
 
 def _default_model(random_state):
-    """The classifier used to *measure* thresholds, not to report results.
+    """Build the classifier used to *measure* thresholds, not to report results.
 
     Deliberately **not** the ``"paper1"`` preset every other entry point
     defaults to. That preset fixes ``max_features=4``, a value chosen for
@@ -612,7 +613,7 @@ def plot_threshold_sweep(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Validation score against ``selection_threshold``, with the choice marked.
+    """Plot validation score against ``selection_threshold``, marking the choice.
 
     Requires matplotlib (``pip install facedyn[viz]``).
 

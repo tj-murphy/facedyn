@@ -79,7 +79,7 @@ def test_logistic_regression_is_unregularised():
     model = make_classifier("logistic_regression").named_steps["classifier"]
     # Expressed as `penalty=None` up to scikit-learn 1.7 and as `C=inf`
     # from 1.8; either way there must be no shrinkage.
-    assert getattr(model, "penalty", None) is None or model.C == np.inf
+    assert getattr(model, "penalty", None) is None or np.inf == model.C
 
 
 def test_overrides_win_over_the_preset():
@@ -117,7 +117,7 @@ def test_fit_classifiers_fits_every_model_on_string_labels():
     X, y = make_xy()
     models = fit_classifiers(make_classifiers(random_state=0), X, y)
 
-    for name, model in models.items():
+    for model in models.values():
         predictions = model.predict(X)
         assert set(predictions) <= {"fake", "real"}
         assert set(model.classes_) == {"fake", "real"}

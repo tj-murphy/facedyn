@@ -65,7 +65,7 @@ PAPER_8 = [
 
 def main() -> None:
     sys.path.insert(0, str(NOTEBOOKS))
-    from _cache_utils import fit_boruta_selector  # noqa: E402
+    from _cache_utils import fit_boruta_selector
 
     cmfts = pd.read_csv(REPO / "R Validation Data" / "r_cmfts_output_imputed_zerosd.csv")
     test = pd.read_csv(REPO / "R Validation Data" / "r_cmfts_output_imputed_zerosd_test.csv")

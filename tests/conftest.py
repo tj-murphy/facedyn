@@ -27,6 +27,8 @@ Two habits worth keeping:
 """
 
 import os
+import sys
+
 import pytest
 
 #: Cores left free for whatever else the machine is doing. `n_jobs=-1`
@@ -71,3 +73,19 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip_slow)
+
+
+@pytest.fixture(autouse=True)
+def _close_figures():
+    """Close every matplotlib figure a test leaves open.
+
+    pyplot keeps each figure alive until it is closed, and warns once more
+    than 20 are open. With warnings raised as errors, that turns whichever
+    test opens the 21st figure into a failure that has nothing to do with
+    it. Only acts if a test has already imported pyplot, so the core tests
+    stay free of matplotlib.
+    """
+    yield
+    pyplot = sys.modules.get("matplotlib.pyplot")
+    if pyplot is not None:
+        pyplot.close("all")

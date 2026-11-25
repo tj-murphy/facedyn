@@ -14,6 +14,13 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 
+__all__ = [
+    "apply_rowwise",
+    "pivot_features_wide",
+    "reshape_to_wide",
+    "split_wide",
+]
+
 
 def _resolve_id_vars(df: pd.DataFrame, candidates: list[str], group_col: str) -> list[str]:
     """Auto-detect metadata columns that are constant within each group.

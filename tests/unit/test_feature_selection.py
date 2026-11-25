@@ -473,13 +473,13 @@ FEATURES = ["informative", "noise_a", "noise_b"]
 
 def _fit_selector(**kwargs) -> BorutaSelector:
     frame = _selector_frame()
-    defaults = dict(
-        feature_columns=FEATURES,
-        n_repeats=4,
-        importance="gini",
-        n_estimators=50,
-        random_state=0,
-    )
+    defaults = {
+        "feature_columns": FEATURES,
+        "n_repeats": 4,
+        "importance": "gini",
+        "n_estimators": 50,
+        "random_state": 0,
+    }
     selector = BorutaSelector(**{**defaults, **kwargs})
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)

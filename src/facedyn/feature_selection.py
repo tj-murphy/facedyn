@@ -22,14 +22,14 @@ substantially noise, with nothing in the output to say so. That is the
 trap this module is built to close: :class:`BorutaSelector` repeats the
 run across seeds and reports how often each feature survives, and
 :func:`correlated_feature_clusters` surfaces the near-duplicate groups
-that cause the churn in the first place. See ``PIPELINE.md`` step 8 for
-the full investigation and the measured numbers.
+that cause the churn in the first place.
 """
 
 from __future__ import annotations
 
 import inspect
 import warnings
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -44,6 +44,22 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.utils.validation import check_is_fitted, check_random_state
 
 from facedyn._plot_utils import save_figure
+
+__all__ = [
+    "CONFIRMED",
+    "REJECTED",
+    "TENTATIVE",
+    "BorutaRun",
+    "BorutaSelector",
+    "boruta_feature_stats",
+    "correlated_feature_clusters",
+    "gini_importance",
+    "oob_permutation_importance",
+    "plot_boruta_importance",
+    "plot_boruta_stability",
+    "plot_feature_clusters",
+    "tentative_rough_fix",
+]
 
 CONFIRMED = "Confirmed"
 TENTATIVE = "Tentative"
@@ -88,13 +104,13 @@ def _n_bootstrap_samples(n_samples: int, max_samples) -> int:
     """Bootstrap sample size for a forest, mirroring sklearn's own rule."""
     if max_samples is None:
         return n_samples
-    if isinstance(max_samples, (int, np.integer)):
+    if isinstance(max_samples, int | np.integer):
         return int(max_samples)
     return max(round(n_samples * float(max_samples)), 1)
 
 
 def _oob_indices(tree_random_state, n_samples: int, n_bootstrap: int) -> np.ndarray:
-    """Indices *not* drawn into one tree's bootstrap sample.
+    """Return the indices *not* drawn into one tree's bootstrap sample.
 
     Reproduces sklearn's own bootstrap draw -- seed the tree's
     ``random_state`` and take ``randint(0, n_samples, n_bootstrap)`` -- and
@@ -267,7 +283,7 @@ class _ForestImportance:
     closure would drag the whole selector along with it.
     """
 
-    backend: object
+    backend: Callable[..., np.ndarray]
     n_estimators: int
     n_jobs: int | None
 
@@ -330,7 +346,7 @@ class BorutaRun:
     def confirmed(self, rough_fixed: bool = True) -> list[str]:
         """Features decided ``"Confirmed"``, after rough fix by default."""
         decisions = self.rough_fixed_decisions if rough_fixed else self.decisions
-        return [f for f, d in zip(self.feature_names, decisions) if d == CONFIRMED]
+        return [f for f, d in zip(self.feature_names, decisions, strict=True) if d == CONFIRMED]
 
 
 def _make_shadows(X_active: np.ndarray, rng) -> np.ndarray:
@@ -430,7 +446,7 @@ def _boruta_run(
     max_iter: int,
     random_state,
 ) -> BorutaRun:
-    """A single Boruta run: iterate until nothing is tentative, or `max_iter`.
+    """Run Boruta once: iterate until nothing is tentative, or `max_iter`.
 
     Implemented from the algorithm as published in Kursa & Rudnicki
     (2010), *Feature Selection with the Boruta Package*, JSS 36(11) --
@@ -604,7 +620,7 @@ def correlated_feature_clusters(
 # --------------------------------------------------------------------------
 
 
-class BorutaSelector(BaseEstimator, TransformerMixin):
+class BorutaSelector(TransformerMixin, BaseEstimator):
     """All-relevant feature selection via Boruta, repeated across seeds.
 
     A native implementation of the Boruta algorithm (Kursa & Rudnicki,
@@ -801,7 +817,14 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
             ) from None
         return _ForestImportance(backend, self.n_estimators, forest_n_jobs)
 
-    def fit(self, X: pd.DataFrame, y) -> "BorutaSelector":
+    def fit(self, X: pd.DataFrame, y) -> BorutaSelector:
+        """Run Boruta ``n_repeats`` times and keep the stably selected features.
+
+        With more than one repeat, a feature is kept when its selection
+        frequency is at least ``selection_threshold``; with one repeat, every
+        confirmed feature is kept. Sets ``stability_``,
+        ``selection_frequency_`` and ``selected_columns_``.
+        """
         if self.n_repeats < 1:
             raise ValueError(f"n_repeats must be >= 1, got {self.n_repeats}")
         if self.n_repeats == 1:
@@ -902,8 +925,8 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
         self.stability_ = stability.sort_values(
             ["selection_freq", "median_imp"], ascending=False
         ).reset_index(drop=True)
-        self.selection_frequency_ = dict(zip(features, selection_freq))
-        self.selected_columns_ = [f for f, keep in zip(features, selected) if keep]
+        self.selection_frequency_ = dict(zip(features, selection_freq, strict=True))
+        self.selected_columns_ = [f for f, keep in zip(features, selected, strict=True) if keep]
 
     def cluster_stability(self) -> pd.DataFrame:
         """Roll `stability_` up to correlated-cluster level.
@@ -957,12 +980,14 @@ class BorutaSelector(BaseEstimator, TransformerMixin):
         )
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Keep the metadata columns and the selected feature columns."""
         check_is_fitted(self, "selected_columns_")
         metadata = X.drop(columns=self.feature_columns_).reset_index(drop=True)
         selected = X[self.selected_columns_].reset_index(drop=True)
         return pd.concat([metadata, selected], axis=1)
 
     def get_feature_names_out(self, input_features=None) -> np.ndarray:
+        """Names of the selected feature columns."""
         check_is_fitted(self, "selected_columns_")
         return np.asarray(self.selected_columns_, dtype=object)
 
@@ -1140,7 +1165,7 @@ def plot_boruta_importance(
     # favour of `orientation`, but `orientation` does not exist on the 3.7
     # this package still supports -- so pick whichever the installed
     # version accepts rather than pinning either.
-    horizontal = (
+    horizontal: dict[str, object] = (
         {"orientation": "horizontal"}
         if "orientation" in inspect.signature(ax.boxplot).parameters
         else {"vert": False}
@@ -1149,7 +1174,7 @@ def plot_boruta_importance(
         data, patch_artist=True, widths=0.6, showfliers=False,
         medianprops={"color": "black"}, **horizontal,
     )
-    for patch, colour in zip(boxes["boxes"], colours):
+    for patch, colour in zip(boxes["boxes"], colours, strict=True):
         patch.set_facecolor(colour)
         patch.set_alpha(0.85)
 
@@ -1179,7 +1204,7 @@ def plot_boruta_stability(
     output_dir: str | Path = ".",
     dpi: int = 300,
 ):
-    """Selection frequency across seeds -- how often each feature survives.
+    """Plot selection frequency across seeds: how often each feature survives.
 
     **The plot to read before trusting any single Boruta run.** A feature
     confirmed in 20 of 20 runs and one confirmed in 9 of 20 are

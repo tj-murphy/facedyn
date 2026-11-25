@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import re
 
+__all__ = [
+    "AU_DESCRIPTIONS",
+    "extract_au_code",
+    "humanise_au_label",
+    "humanise_au_labels",
+    "humanise_feature_label",
+]
+
 #: FACS action names for OpenFace's 17 AU intensity ("_r") columns, keyed by
 #: AU code. Taken from the original R analysis (``final_analysis.Rmd``,
 #: ``au_names``), not re-derived, since the exact wording there is what the
@@ -129,6 +137,6 @@ def humanise_feature_label(column: str) -> str:
         if column.endswith("_" + name) and len(column) > len(name) + 1:
             feature, series = name, column[: -len(name) - 1].rstrip("_")
             break
-    if feature is None:
+    if feature is None or series is None:
         return humanise_au_label(column)
     return f"{humanise_au_label(series)} — {feature}"

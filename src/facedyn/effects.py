@@ -52,6 +52,14 @@ import pandas as pd
 from facedyn._plot_utils import save_figure
 from facedyn.au_labels import humanise_feature_label
 
+__all__ = [
+    "ale_grid",
+    "feature_effect_ale",
+    "feature_effect_ale_cv",
+    "plot_feature_effect",
+    "summarise_feature_effects",
+]
+
 _CURVE_COLUMNS = ["feature", "class", "value", "effect", "n"]
 _FALLBACK_COLOURS = ["#E69F00", "#009E73", "#CC79A7", "#0072B2", "#D55E00", "#56B4E9"]
 
@@ -189,7 +197,7 @@ def _as_frame(X):
 
 
 def _as_list(features) -> list:
-    if isinstance(features, (str, int, np.integer)):
+    if isinstance(features, str | int | np.integer):
         return [features]
     return list(features)
 
@@ -307,7 +315,7 @@ def _fold_items(result, repeat):
 
 
 def _fold_data(fold, X):
-    """The table one fold's effect is estimated over, or None if unusable."""
+    """Return the table one fold's effect is estimated over, or None if unusable."""
     if X is None:
         return fold["X_test"]
     if any(col not in X.columns for col in fold["features"]):
@@ -440,7 +448,7 @@ def _is_cv_result(obj) -> bool:
 
 
 def _rug_values(model_or_result, X, feature, is_cv, repeat) -> np.ndarray:
-    """The observed values of ``feature``, for the rug under each panel."""
+    """Return the observed values of ``feature``, for the rug under each panel."""
     if X is not None:
         frame = _as_frame(X)[0]
         return frame[feature].to_numpy(dtype=float) if feature in frame.columns else np.array([])
@@ -557,7 +565,8 @@ def plot_feature_effect(
         raise ValueError(f"Need {len(feature_list)} axes, got {len(axes_flat)}.")
     fig = axes_flat[0].figure
 
-    for ax, feature in zip(axes_flat, feature_list):
+    # A grid can have more axes than features; the spare axes are hidden below.
+    for ax, feature in zip(axes_flat, feature_list, strict=False):
         for label in labels:
             part = summary[(summary["feature"] == feature) & _matches(summary["class"], label)]
             name = "effect" if label is None else str(label)

@@ -33,7 +33,7 @@ def naive_left_rolling_mean_extend(values: list[float], k: int) -> list[float]:
     return out
 
 
-@pytest.mark.parametrize("values,k", [
+@pytest.mark.parametrize(("values", "k"), [
     ([1, 2, 3, 4, 5, 6], 4),
     ([1, 2, 3, 4, 5, 6], 2),
     ([5, 5, 5], 4),  # shorter than window
@@ -49,7 +49,7 @@ def test_matches_naive_reference(values, k):
 
     expected = naive_left_rolling_mean_extend(values, k)
     actual = out["smth_AU01_r"].tolist()
-    for a, e in zip(actual, expected):
+    for a, e in zip(actual, expected, strict=True):
         if e is None:
             assert pd.isna(a)
         else:

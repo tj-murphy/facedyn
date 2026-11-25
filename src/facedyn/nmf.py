@@ -17,6 +17,22 @@ from sklearn.utils.validation import check_is_fitted
 from facedyn._plot_utils import save_figure
 from facedyn.au_labels import humanise_au_label
 
+__all__ = [
+    "NMFDecomposer",
+    "max_normalize_columns",
+    "nmf_cophenetic_correlation",
+    "nmf_rank_cv_sweep",
+    "nmf_rank_mse_sweep",
+    "nmf_reconstruction_error",
+    "nmf_reconstruction_r2_per_au",
+    "plot_nmf_basis_heatmap",
+    "plot_nmf_cophenetic_correlation",
+    "plot_nmf_rank_cv",
+    "plot_nmf_reconstruction",
+    "plot_nmf_reconstruction_extremes",
+    "plot_nmf_reconstruction_r2_bar",
+]
+
 
 def _resolve_columns(
     X: pd.DataFrame, columns: list[str] | None, column_pattern: str
@@ -188,7 +204,7 @@ def nmf_rank_cv_sweep(
     where held-out error bottoms out and rises with rank while training
     error keeps falling. Row-holdout cannot show this, because a held-out
     row is free to choose new activation weights and so fits about as well
-    under an overfit basis. See `PIPELINE.md` step 4.
+    under an overfit basis.
 
     One random mask is reused across all `ranks` within a replicate, so
     ranks are compared on the same held-out entries.
@@ -473,7 +489,7 @@ def nmf_cophenetic_correlation(
     all_labels = Parallel(n_jobs=n_jobs)(delayed(_dominant_labels)(k, run) for k, run in tasks)
 
     labels_by_rank: dict[int, list[np.ndarray]] = {k: [] for k in ranks}
-    for (k, _run), dominant in zip(tasks, all_labels):
+    for (k, _run), dominant in zip(tasks, all_labels, strict=True):
         labels_by_rank[k].append(dominant)
 
     records = []
@@ -548,7 +564,7 @@ def plot_nmf_cophenetic_correlation(
     return ax
 
 
-class NMFDecomposer(BaseEstimator, TransformerMixin):
+class NMFDecomposer(TransformerMixin, BaseEstimator):
     """Non-negative matrix factorisation of AU columns via sklearn's NMF.
 
     Fits on the resolved numeric columns. ``transform`` returns all other
@@ -557,8 +573,9 @@ class NMFDecomposer(BaseEstimator, TransformerMixin):
     Activation magnitudes are only defined up to an arbitrary positive
     scale per component, since ``(W, H)`` and ``(W·S, S⁻¹·H)`` reconstruct
     the same data for any positive diagonal ``S``. Do not compare raw
-    magnitudes across fits or against R without rescaling. See
-    `PIPELINE.md` step 4 for the validation against real R output.
+    magnitudes across fits or against R without rescaling. The regression
+    tests in ``tests/validation/test_nmf_decomposer_validation.py`` check
+    the fit against real R output.
 
     Parameters
     ----------
@@ -606,7 +623,8 @@ class NMFDecomposer(BaseEstimator, TransformerMixin):
         self.max_iter = max_iter
         self.tol = tol
 
-    def fit(self, X: pd.DataFrame, y=None) -> "NMFDecomposer":
+    def fit(self, X: pd.DataFrame, y=None) -> NMFDecomposer:
+        """Fit NMF on the selected columns of ``X``; sets ``components_``."""
         self.columns_ = _resolve_columns(X, self.columns, self.column_pattern)
         self.model_ = NMF(
             n_components=self.n_components,
@@ -620,6 +638,7 @@ class NMFDecomposer(BaseEstimator, TransformerMixin):
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Replace the factorised columns with one activation column per component."""
         check_is_fitted(self, "model_")
         activations = self.model_.transform(X[self.columns_].to_numpy())
         metadata = X.drop(columns=self.columns_).reset_index(drop=True)
@@ -761,9 +780,9 @@ def nmf_reconstruction_error(decomposer: NMFDecomposer, X: pd.DataFrame) -> pd.D
     data for in-sample quality, or held-out data for generalisation. If R2
     is low, consider
     :func:`~facedyn.representative_aus.select_representative_aus` instead
-    of NMF activations. See `PIPELINE.md` step 4 for the validation against
-    real R output, including a discrepancy between R's prose and its own
-    per-AU numbers.
+    of NMF activations. The regression tests in
+    ``tests/validation/test_nmf_reconstruction_validation.py`` check this
+    against real R output.
 
     Parameters
     ----------
@@ -1007,7 +1026,7 @@ def plot_nmf_reconstruction_extremes(
         if len(axes) != 2:
             raise ValueError(f"ax must have 2 entries, got {len(axes)}.")
 
-    for target_ax, au, role in zip(axes, [best_au, worst_au], ["Best", "Worst"]):
+    for target_ax, au, role in zip(axes, [best_au, worst_au], ["Best", "Worst"], strict=True):
         au_label = humanise_au_label(au) if humanise else au
         plot_nmf_reconstruction(
             decomposer, X, au=au, video_id=video_id,

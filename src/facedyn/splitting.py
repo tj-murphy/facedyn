@@ -24,8 +24,8 @@ group by participant, not by session.
   deepfake study's column names; override them for your own data.
 - :func:`pair_groups` (and :func:`pair_groups_from_filenames`) produce the
   ``groups`` array cross-validation needs so a pair is never split across
-  folds. On matched-pairs data this is not optional -- see `PIPELINE.md`
-  step 8 and :class:`RepeatedStratifiedGroupKFold`.
+  folds. On matched-pairs data this is not optional -- see
+  :class:`RepeatedStratifiedGroupKFold`.
 """
 
 from __future__ import annotations
@@ -42,6 +42,17 @@ from sklearn.model_selection import (
     StratifiedGroupKFold,
 )
 from sklearn.utils.validation import check_random_state
+
+__all__ = [
+    "RepeatedStratifiedGroupKFold",
+    "group_report",
+    "group_train_test_split",
+    "groups_from_column",
+    "pair_group_report",
+    "pair_groups",
+    "pair_groups_from_filenames",
+    "paired_train_test_split",
+]
 
 
 def _video_to_group(df: pd.DataFrame, group_col: str, video_col: str) -> pd.Series:
@@ -104,7 +115,7 @@ def group_train_test_split(
     ----------
     df : pd.DataFrame
         Frame-level data (one row per frame) or video-level data (one row
-        per video). See ``DATA_FORMAT.md`` for the expected shape.
+        per video). See "Input data" in the README for the expected shape.
     train_size : float, default 0.8
         Fraction of groups assigned to the training set: videos when
         ``group_col`` is None, otherwise ``group_col`` values (e.g.
@@ -354,7 +365,7 @@ def paired_train_test_split(
         video present in ``df`` (a broken pairing).
     """
     source_rows = df.loc[df[label_col] == real_label, [video_col, pair_col]].drop_duplicates(video_col)
-    source_to_partner = dict(zip(source_rows[video_col], source_rows[pair_col]))
+    source_to_partner = dict(zip(source_rows[video_col], source_rows[pair_col], strict=True))
     source_videos = np.array(sorted(source_to_partner))
 
     n_train = math.floor(train_size * len(source_videos))
@@ -388,7 +399,7 @@ def _video_to_pair(df: pd.DataFrame, video_col: str, pair_col: str) -> dict[str,
             f"than one: {offenders}. Frames of the same video disagree about "
             f"which video they are paired with."
         )
-    return dict(zip(unique[video_col], unique[pair_col]))
+    return dict(zip(unique[video_col], unique[pair_col], strict=True))
 
 
 def pair_groups(
@@ -587,11 +598,11 @@ def pair_groups_from_filenames(
 
     using_default_rule = key_fn is None
     if key_fn is None:
-        def key_fn(video_filename, label):  # noqa: E306 - local default
+        def key_fn(video_filename, label):
             return _deepfake_detection_pair_key(video_filename, label, real_label)
 
     groups = np.array([
-        key_fn(video, label) for video, label in zip(df[video_col], df[label_col])
+        key_fn(video, label) for video, label in zip(df[video_col], df[label_col], strict=True)
     ])
 
     # Only the default rule promises that a derived key *is* a real video's
@@ -721,6 +732,7 @@ class RepeatedStratifiedGroupKFold(BaseCrossValidator):
         self.random_state = random_state
 
     def get_n_splits(self, X=None, y=None, groups=None) -> int:
+        """Total number of splits: ``n_splits * n_repeats``."""
         return self.n_splits * self.n_repeats
 
     def split(self, X, y=None, groups=None):
