@@ -444,7 +444,7 @@ def classification_metrics(
     # R: the largest class share of the *reference*, tested one-sided and
     # exactly, not with a normal approximation.
     _, counts = np.unique(y_true, return_counts=True)
-    nir = float(counts.max() / n)
+    nir = float(np.max(counts) / n)
     p_acc_gt_nir = float(stats.binomtest(correct, n, nir, alternative="greater").pvalue)
 
     # R's mcnemar.test defaults to `correct = TRUE`, but applies the
@@ -522,7 +522,7 @@ def _multiclass_metrics(y_true, y_pred, y_score, classes, alpha) -> pd.Series:
     correct = int(np.sum(y_true == y_pred))
     ci_lower, ci_upper = stats.binomtest(correct, n).proportion_ci(1 - alpha, "exact")
     _, counts = np.unique(y_true, return_counts=True)
-    nir = float(counts.max() / n)
+    nir = float(np.max(counts) / n)
 
     out = {
         "n": n,

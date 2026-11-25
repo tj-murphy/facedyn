@@ -26,6 +26,8 @@ inside each fold.
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import sklearn
 from sklearn.base import BaseEstimator
@@ -65,7 +67,7 @@ CLASSIFIER_LABELS = {
 #: Hyperparameters replicating the deepfake study's fixed-parameter R fits
 #: (``caret::trainControl(method="none")``). See each entry's note in
 #: :func:`make_classifier`.
-PAPER1_PARAMS = {
+PAPER1_PARAMS: dict[str, dict[str, Any]] = {
     "random_forest": {"n_estimators": 500, "max_features": 4},
     "c50_substitute": {"n_estimators": 20},
     "svm_rbf": {"estimator__C": 0.25},
@@ -78,7 +80,7 @@ PAPER1_PARAMS = {
 #: ``svmRadial`` grid at that length is ``C = 2^(-2:2)`` with sigma fixed,
 #: which is reproduced here. The SVM's ``C`` sits one level down
 #: (``estimator__C``) because the SVC is wrapped for Platt scaling.
-PAPER1_PARAM_GRIDS = {
+PAPER1_PARAM_GRIDS: dict[str, dict[str, list[Any]]] = {
     "random_forest": {"classifier__max_features": [1, 2, 4, 6, 8]},
     "c50_substitute": {"classifier__n_estimators": [1, 10, 20, 30, 40]},
     "svm_rbf": {"classifier__estimator__C": [0.25, 0.5, 1.0, 2.0, 4.0]},
