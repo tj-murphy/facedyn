@@ -296,6 +296,29 @@ def test_plot_nmf_rank_cv_robust_mode_clips_outlier_and_uses_median():
     assert "off-scale" in ax.get_title()
 
 
+def test_plot_nmf_rank_cv_robust_mode_clips_degenerate_median():
+    # When most replicates at a rank are degenerate, the median itself is huge.
+    # The summary line must be clipped too, so the axis stays on the data
+    # (regression: it used to push the lower limit far below zero).
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from facedyn.nmf import plot_nmf_rank_cv
+
+    records = [
+        {"rank": rank, "rep": rep, "train_mse": 1.0 - 0.1 * rank, "test_mse": 0.8 + 0.05 * rank}
+        for rank in range(2, 7)
+        for rep in range(3)
+    ]
+    for rep in range(3):
+        records.append({"rank": 7, "rep": rep, "train_mse": 0.3, "test_mse": 1e5 * (rep + 1)})
+    ax = plot_nmf_rank_cv(pd.DataFrame.from_records(records), robust=True)
+
+    bottom, top = ax.get_ylim()
+    assert bottom == 0
+    assert top < 50
+    assert "off-scale" in ax.get_title()
+
+
 def test_plot_nmf_rank_cv_non_robust_mode_is_not_clipped():
     matplotlib = pytest.importorskip("matplotlib")
     matplotlib.use("Agg")

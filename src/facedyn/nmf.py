@@ -401,14 +401,19 @@ def plot_nmf_rank_cv(
                         fontsize=7,
                         color=color,
                     )
-        ax.plot(agg["rank"], agg[col], color=color, linewidth=2.2, label=labels[col])
-        ax.scatter(agg["rank"], agg[col], color=color, s=40, zorder=3)
+        # The summary line is clipped like the replicates: if half or more of
+        # the replicates at a rank are degenerate, the median is too, and an
+        # unclipped line would drag the axis limits far outside the data.
+        summary_y = agg[col].clip(upper=y_top) if y_top is not None else agg[col]
+        ax.plot(agg["rank"], summary_y, color=color, linewidth=2.2, label=labels[col])
+        ax.scatter(agg["rank"], summary_y, color=color, s=40, zorder=3)
 
     best_rank = agg.loc[agg["test_mse"].idxmin(), "rank"]
     ax.axvline(best_rank, linestyle="--", color="grey", linewidth=1)
 
     if y_top is not None:
-        ax.set_ylim(top=y_top * 1.05)
+        # MSE is never negative, so the axis starts at 0.
+        ax.set_ylim(bottom=0, top=y_top * 1.05)
 
     ax.set_xlabel("Rank (k)")
     ax.set_ylabel("MSE")
