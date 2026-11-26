@@ -63,6 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- Feature extraction now works on videos of different lengths. `reshape_to_wide` pads shorter videos with trailing NaNs up to the longest video, and every extractor then rejected them ("Series contains N NaN value(s)"), so `cross_validate_pipeline` failed on any dataset with unequal video lengths. `apply_rowwise`, which all extractors share, now drops trailing padding before computing features. A gap *inside* a series is still passed through and still rejected.
 - Every transformer listed `BaseEstimator` before `TransformerMixin`. On scikit-learn 1.6 or later that made them report that they were not transformers (`__sklearn_tags__().transformer_tags` was `None`). They now list the mixin first, as scikit-learn requires.
 - Lists that must be the same length are zipped with `strict=True`, so a mismatch raises instead of silently dropping items.
 - Docstrings no longer refer to development notes that are not in the repository.

@@ -130,6 +130,18 @@ def split_wide(
     return metadata, values
 
 
+def _trim_padding(row: np.ndarray) -> np.ndarray:
+    """Drop the trailing NaNs that pad a shorter video in a wide frame.
+
+    :func:`reshape_to_wide` gives every row as many ``fr_`` columns as the
+    longest video, so a shorter video ends in NaNs that are not part of its
+    series. Only trailing NaNs are dropped: a gap inside a series is real
+    missing data, and is left for the feature function to reject.
+    """
+    observed = np.flatnonzero(~np.isnan(row))
+    return row[: observed[-1] + 1] if observed.size else row[:0]
+
+
 def apply_rowwise(
     wide_df: pd.DataFrame,
     fn,
@@ -167,7 +179,9 @@ def apply_rowwise(
     metadata, values = split_wide(wide_df, frame_pattern)
 
     with threadpool_limits(limits=1):
-        rows = Parallel(n_jobs=n_jobs, verbose=verbose)(delayed(fn)(row) for row in values)
+        rows = Parallel(n_jobs=n_jobs, verbose=verbose)(
+            delayed(fn)(_trim_padding(row)) for row in values
+        )
 
     features = pd.DataFrame(list(rows)).reset_index(drop=True)
     return pd.concat([metadata, features], axis=1)

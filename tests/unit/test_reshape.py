@@ -192,3 +192,46 @@ def test_pivot_features_wide_respects_explicit_feature_columns():
 
     assert "sd_smth_AU01_r" not in wide.columns
     assert "mean_smth_AU01_r" in wide.columns
+
+
+def _unequal_length_wide():
+    """Two videos of different lengths: the shorter one is NaN-padded."""
+    df = pd.DataFrame(
+        {
+            "video_filename": ["long"] * 30 + ["short"] * 12,
+            "frame": list(range(1, 31)) + list(range(1, 13)),
+            "smth_AU01_r": np.r_[np.arange(30.0), np.arange(12.0)],
+        }
+    )
+    return reshape_to_wide(df, value_cols=["smth_AU01_r"])
+
+
+def test_apply_rowwise_trims_padding_from_shorter_videos():
+    wide = _unequal_length_wide()
+    assert wide.filter(like="fr_").isna().to_numpy().sum() == 18  # padding exists
+
+    out = apply_rowwise(wide, lambda x: {"length": len(x), "any_nan": np.isnan(x).any()})
+
+    lengths = dict(zip(out["video_filename"], out["length"], strict=True))
+    assert lengths == {"long": 30, "short": 12}
+    assert not out["any_nan"].any()
+
+
+def test_apply_rowwise_still_passes_interior_gaps_through():
+    wide = _unequal_length_wide()
+    wide.loc[wide["video_filename"] == "short", "fr_5"] = np.nan
+
+    out = apply_rowwise(wide, lambda x: {"n_nan": int(np.isnan(x).sum())})
+
+    assert dict(zip(out["video_filename"], out["n_nan"], strict=True)) == {"long": 0, "short": 1}
+
+
+def test_timeseries_features_accept_videos_of_different_lengths():
+    from facedyn.features.timeseries import extract_timeseries_features
+
+    features = extract_timeseries_features(_unequal_length_wide())
+
+    assert dict(zip(features["video_filename"], features["length"], strict=True)) == {
+        "long": 30,
+        "short": 12,
+    }
