@@ -221,21 +221,35 @@ def oob_permutation_importance(
     # against encoded y rather than mapping predictions back each time.
     y_encoded = np.searchsorted(forest.classes_, y)
 
+    # Batched for speed. Calling `tree.predict` once per column made the
+    # cost almost all per-call overhead: Boruta asks for this function up
+    # to 99 times per run, each with 500 trees x (features + shadows)
+    # calls on a few dozen OOB rows. Each tree now makes one call on a
+    # stacked block (unpermuted rows first, then one copy per permuted
+    # column). Columns the tree never splits on are skipped: shuffling
+    # them cannot change a prediction, so their drop is exactly 0, as the
+    # one-call-per-column loop also found. Every permutation is still
+    # drawn, in the same order, so a given `random_state` returns
+    # bit-identical values to that loop
+    # (`test_oob_permutation_importance_matches_the_unbatched_loop`).
     drops = np.zeros((len(forest.estimators_), n_features))
     for t, tree in enumerate(forest.estimators_):
         oob = _oob_indices(tree.random_state, n_samples, n_bootstrap)
         if oob.size == 0:
             continue
-        # Fancy indexing copies, so this block is safe to permute in place
-        # even when `X` itself is read-only (as pandas 3 hands it over).
         X_oob = X[oob]
         y_oob = y_encoded[oob]
-        baseline = np.mean(tree.predict(X_oob) == y_oob)
-        for j in range(n_features):
-            original = X_oob[:, j].copy()
-            X_oob[:, j] = original[rng.permutation(oob.size)]
-            drops[t, j] = baseline - np.mean(tree.predict(X_oob) == y_oob)
-            X_oob[:, j] = original
+        n_oob = oob.size
+        permutations = [rng.permutation(n_oob) for _ in range(n_features)]
+        split_features = tree.tree_.feature
+        used = np.unique(split_features[split_features >= 0])
+
+        block = np.tile(X_oob, (used.size + 1, 1))
+        for b, j in enumerate(used, start=1):
+            block[b * n_oob : (b + 1) * n_oob, j] = X_oob[permutations[j], j]
+        correct = tree.predict(block) == np.tile(y_oob, used.size + 1)
+        accuracy = correct.reshape(used.size + 1, n_oob).mean(axis=1)
+        drops[t, used] = accuracy[0] - accuracy[1:]
 
     mean_drop = drops.mean(axis=0)
     standard_error = drops.std(axis=0, ddof=1) / np.sqrt(drops.shape[0])

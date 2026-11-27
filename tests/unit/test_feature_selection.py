@@ -380,6 +380,56 @@ def test_oob_permutation_importance_ranks_the_informative_feature_first():
     assert importance[0] > importance[1:].max()
 
 
+def _unbatched_oob_permutation_importance(X, y, n_estimators, random_state):
+    """The original one-`predict`-call-per-column loop, kept as the reference
+    the batched implementation must reproduce exactly."""
+    X = np.asarray(X, dtype=float)
+    y = np.asarray(y)
+    forest = RandomForestClassifier(
+        n_estimators=n_estimators, max_features="sqrt", bootstrap=True, random_state=random_state
+    ).fit(X, y)
+    n_samples, n_features = X.shape
+    rng = np.random.RandomState(random_state)
+    y_encoded = np.searchsorted(forest.classes_, y)
+    drops = np.zeros((len(forest.estimators_), n_features))
+    for t, tree in enumerate(forest.estimators_):
+        oob = _oob_indices(tree.random_state, n_samples, n_samples)
+        if oob.size == 0:
+            continue
+        X_oob = X[oob]
+        y_oob = y_encoded[oob]
+        baseline = np.mean(tree.predict(X_oob) == y_oob)
+        for j in range(n_features):
+            original = X_oob[:, j].copy()
+            X_oob[:, j] = original[rng.permutation(oob.size)]
+            drops[t, j] = baseline - np.mean(tree.predict(X_oob) == y_oob)
+            X_oob[:, j] = original
+    mean_drop = drops.mean(axis=0)
+    standard_error = drops.std(axis=0, ddof=1) / np.sqrt(drops.shape[0])
+    return np.divide(
+        mean_drop, standard_error, out=np.zeros_like(mean_drop), where=standard_error > 0
+    )
+
+
+@pytest.mark.parametrize("n_classes", [2, 3])
+def test_oob_permutation_importance_matches_the_unbatched_loop(n_classes):
+    """The batched implementation is a pure speed-up: same seed, same numbers.
+
+    Many more columns than `sqrt` lets one tree use, so the skip-unused-
+    columns path is exercised alongside the informative columns."""
+    rng = np.random.default_rng(1)
+    n, p = 120, 40
+    y = rng.integers(0, n_classes, n)
+    X = rng.normal(size=(n, p))
+    X[:, :4] += y[:, None] * 0.8
+
+    expected = _unbatched_oob_permutation_importance(X, y, n_estimators=60, random_state=3)
+    actual = oob_permutation_importance(X, y, n_estimators=60, random_state=3)
+
+    np.testing.assert_array_equal(actual, expected)
+    assert (expected[:4] > 0).all()
+
+
 def test_gini_importance_ranks_the_informative_feature_first():
     rng = np.random.default_rng(0)
     n = 200
